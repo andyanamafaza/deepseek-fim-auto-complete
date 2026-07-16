@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
 
+const COST_PER_MTOKEN: Record<string, number> = {
+  'deepseek-v4-flash': 0.28,
+  'deepseek-v4-pro': 0.87,
+  'deepseek-chat': 0.28,
+  'deepseek-reasoner': 0.28,
+};
+
 interface CompletionStats {
   shown: number;
   accepted: number;
@@ -8,19 +15,39 @@ interface CompletionStats {
 }
 
 const STATS_KEY = 'deepseekFim.stats';
+const DEFAULT_STATS: CompletionStats = {
+  shown: 0,
+  accepted: 0,
+  totalTokensUsed: 0,
+  estimatedCost: 0,
+};
+
+function isValidStats(value: unknown): value is CompletionStats {
+  if (!value || typeof value !== 'object') return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.shown === 'number' &&
+    typeof obj.accepted === 'number' &&
+    typeof obj.totalTokensUsed === 'number' &&
+    typeof obj.estimatedCost === 'number' &&
+    !isNaN(obj.shown) &&
+    !isNaN(obj.accepted) &&
+    !isNaN(obj.totalTokensUsed) &&
+    !isNaN(obj.estimatedCost)
+  );
+}
 
 export class StatsTracker {
   private stats: CompletionStats;
   private onDidChangeTextDocument: vscode.Disposable | undefined;
   private lastShownText: string | undefined;
 
-  constructor(private globalState: vscode.Memento) {
-    this.stats = this.globalState.get<CompletionStats>(STATS_KEY) || {
-      shown: 0,
-      accepted: 0,
-      totalTokensUsed: 0,
-      estimatedCost: 0,
-    };
+  constructor(
+    private globalState: vscode.Memento,
+    private getModel?: () => string,
+  ) {
+    const stored = this.globalState.get<unknown>(STATS_KEY);
+    this.stats = isValidStats(stored) ? stored : { ...DEFAULT_STATS };
 
     this.onDidChangeTextDocument = vscode.workspace.onDidChangeTextDocument((event) => {
       if (!this.lastShownText) return;
@@ -35,15 +62,25 @@ export class StatsTracker {
     });
   }
 
-  trackShown(text: string): void {
+  trackShown(text: string, exactTokens?: number): void {
     this.stats.shown++;
+
+    const tokens = exactTokens ?? Math.ceil(text.length / 4);
+    this.stats.totalTokensUsed += tokens;
+
+    const model = this.getModel?.() || 'deepseek-v4-flash';
+    const rate = COST_PER_MTOKEN[model] || 0.28;
+    this.stats.estimatedCost += (tokens / 1_000_000) * rate;
+
     this.lastShownText = text;
     this.persist();
   }
 
   addTokensUsed(count: number): void {
     this.stats.totalTokensUsed += count;
-    this.stats.estimatedCost += (count / 1_000_000) * 0.28;
+    const model = this.getModel?.() || 'deepseek-v4-flash';
+    const rate = COST_PER_MTOKEN[model] || 0.28;
+    this.stats.estimatedCost += (count / 1_000_000) * rate;
     this.persist();
   }
 
@@ -58,7 +95,7 @@ export class StatsTracker {
       `Accepted: ${this.stats.accepted}`,
       `Rate: ${this.acceptanceRate}%`,
       `Tokens: ${this.stats.totalTokensUsed}`,
-      `Cost: $${this.stats.estimatedCost.toFixed(4)}`,
+      `Cost: $${this.stats.estimatedCost.toFixed(5)}`,
     ].join(' | ');
   }
 
