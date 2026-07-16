@@ -2,7 +2,7 @@
   "name": "deepseek-fim-auto-complete",
   "displayName": "DeepSeek Autocomplete",
   "description": "AI-powered code completions using DeepSeek Fill-in-the-Middle API. Fast, context-aware inline suggestions for 14+ programming languages with streaming, caching, and multiline support.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "andyanamafaza",
   "license": "MIT",
   "icon": "icon.png",
@@ -225,14 +225,22 @@
         },
         "deepseekFim.disableInFiles": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "examples": ["**/*.min.js", "**/*.json", "**/secret*"],
+          "examples": [
+            "**/*.min.js",
+            "**/*.json",
+            "**/secret*"
+          ],
           "description": "Glob patterns for files where completions are disabled."
         },
         "deepseekFim.stopSequences": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Additional stop sequences for the model (appended to language defaults)."
         },
