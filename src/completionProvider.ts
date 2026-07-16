@@ -53,25 +53,28 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       return this.provideInlineForInvoke(document, position, token, apiKey);
     }
 
+    if (this.config.triggerMode === 'manual') return undefined;
+
     const shouldDebounce = await this.debouncer.wait(this.config.debounceMs);
     if (shouldDebounce || token.isCancellationRequested) return undefined;
 
-    const fimContext = this.promptBuilder.build(
-      document,
-      position,
-      this.config.maxPrefixLines,
-      this.config.maxSuffixLines,
-      Math.floor(this.config.maxTokens * 4),
-      Math.floor(this.config.maxTokens * 1.5),
-    );
-
-    const cacheHit = this.cache.lookup(fimContext.prefix);
+    const rawPrefix = this.promptBuilder.getRawPrefix(document, position, this.config.maxPrefixLines, this.config.maxPrefixChars);
+    const cacheHit = this.cache.lookup(rawPrefix);
     if (cacheHit && !isWhitespaceOrEmpty(cacheHit.remaining)) {
       const range = this.getCompletionRange(document, position, cacheHit.remaining);
       this.debug?.log(`Cache hit: "${cacheHit.remaining.slice(0, 40)}..."`);
       this.stats?.trackShown(cacheHit.remaining);
       return [this.createInlineItem(cacheHit.remaining, range)];
     }
+
+    const fimContext = this.promptBuilder.build(
+      document,
+      position,
+      this.config.maxPrefixLines,
+      this.config.maxSuffixLines,
+      this.config.maxPrefixChars,
+      this.config.maxSuffixChars,
+    );
 
     if (isWhitespaceOrEmpty(fimContext.prefix)) return undefined;
 
@@ -83,7 +86,7 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       );
       if (!text) return undefined;
 
-      this.cache.set(fimContext.prefix, text);
+      this.cache.set(rawPrefix, text);
       this.stats?.trackShown(text);
 
       const range = this.getCompletionRange(document, position, text);
@@ -104,6 +107,8 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       position,
       this.config.maxPrefixLines,
       this.config.maxSuffixLines,
+      this.config.maxPrefixChars,
+      this.config.maxSuffixChars,
     );
 
     if (isWhitespaceOrEmpty(fimContext.prefix)) return undefined;
@@ -122,7 +127,11 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       );
 
       const items = results
-        .filter((t): t is string => !!t && !isWhitespaceOrEmpty(t) && !isRepetitive(t))
+        .filter((t): t is string => {
+          if (!t || isWhitespaceOrEmpty(t) || isRepetitive(t)) return false;
+          this.stats?.trackShown(t);
+          return true;
+        })
         .map((text) => {
           const range = this.getCompletionRange(document, position, text);
           return this.createInlineItem(text, range);
