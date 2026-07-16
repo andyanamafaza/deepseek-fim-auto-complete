@@ -1,4 +1,4 @@
-import * as assert from 'assert';
+import assert from 'assert';
 import * as vscode from 'vscode';
 import { Debouncer } from '../../debouncer';
 import { CompletionCache } from '../../cache';
@@ -22,6 +22,8 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.ok(commands.includes('deepseekFim.showLog'), 'showLog command');
     assert.ok(commands.includes('deepseekFim.selectModel'), 'selectModel command');
     assert.ok(commands.includes('deepseekFim.deleteApiKey'), 'deleteApiKey command');
+    assert.ok(commands.includes('deepseekFim.setTemperature'), 'setTemperature command');
+    assert.ok(commands.includes('deepseekFim.setMaxTokens'), 'setMaxTokens command');
   });
 
   test('Toggle command should work', async () => {
@@ -68,7 +70,7 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.strictEqual(hit, 'world');
     const lookup = cache.lookup('def hello(');
     assert.ok(lookup);
-    assert.strictEqual(lookup.completion, 'world');
+    assert.strictEqual(lookup!.completion, 'world');
   });
 
   test('MultilineClassifier should detect triggers', () => {
