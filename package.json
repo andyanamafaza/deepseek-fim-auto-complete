@@ -1,0 +1,269 @@
+{
+  "name": "deepseek-fim-auto-complete",
+  "displayName": "DeepSeek Autocomplete",
+  "description": "AI-powered code completions using DeepSeek Fill-in-the-Middle API. Fast, context-aware inline suggestions for 14+ programming languages with streaming, caching, and multiline support.",
+  "version": "0.0.1",
+  "publisher": "andyanamafaza",
+  "license": "MIT",
+  "icon": "icon.svg",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andyanamafaza/deepseek-fim-auto-complete.git"
+  },
+  "engines": {
+    "vscode": "^1.68.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Artificial Intelligence"
+  ],
+  "keywords": [
+    "deepseek",
+    "fim",
+    "autocomplete",
+    "fill in the middle",
+    "code completion",
+    "ai",
+    "copilot",
+    "inline completion",
+    "code suggestions",
+    "deepseek coder",
+    "vscode extension"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:go",
+    "onLanguage:rust",
+    "onLanguage:c",
+    "onLanguage:cpp",
+    "onLanguage:csharp",
+    "onLanguage:ruby",
+    "onLanguage:php",
+    "onLanguage:swift",
+    "onLanguage:kotlin",
+    "onLanguage:scala",
+    "onLanguage:lua",
+    "onLanguage:sql"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "deepseekFim.enable",
+        "title": "DeepSeek Autocomplete: Enable"
+      },
+      {
+        "command": "deepseekFim.disable",
+        "title": "DeepSeek Autocomplete: Disable"
+      },
+      {
+        "command": "deepseekFim.toggle",
+        "title": "DeepSeek Autocomplete: Toggle"
+      },
+      {
+        "command": "deepseekFim.setApiKey",
+        "title": "DeepSeek Autocomplete: Set API Key"
+      },
+      {
+        "command": "deepseekFim.showStats",
+        "title": "DeepSeek Autocomplete: Usage Statistics"
+      },
+      {
+        "command": "deepseekFim.showLog",
+        "title": "DeepSeek Autocomplete: Debug Log"
+      },
+      {
+        "command": "deepseekFim.selectModel",
+        "title": "DeepSeek Autocomplete: Select Model"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "deepseekFim.toggle",
+        "key": "ctrl+shift+.",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "DeepSeek Autocomplete",
+      "properties": {
+        "deepseekFim.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable inline completions globally."
+        },
+        "deepseekFim.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "DeepSeek API key. Set via command palette for secure storage in OS keychain."
+        },
+        "deepseekFim.model": {
+          "type": "string",
+          "default": "deepseek-v4-flash",
+          "enum": [
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "deepseek-chat",
+            "deepseek-reasoner"
+          ],
+          "description": "DeepSeek model. Use v4-flash for speed, v4-pro for quality."
+        },
+        "deepseekFim.baseUrl": {
+          "type": "string",
+          "default": "https://api.deepseek.com/beta",
+          "description": "DeepSeek API base URL. Change for custom/enterprise deployments."
+        },
+        "deepseekFim.triggerMode": {
+          "type": "string",
+          "default": "automatic",
+          "enum": [
+            "automatic",
+            "manual"
+          ],
+          "enumDescriptions": [
+            "Request completions automatically while typing (with debounce).",
+            "Only request when explicitly triggered (Ctrl+Space)."
+          ],
+          "description": "Controls when completion requests are made."
+        },
+        "deepseekFim.debounceMs": {
+          "type": "number",
+          "default": 300,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Debounce delay in ms before triggering a completion request while typing."
+        },
+        "deepseekFim.maxTokens": {
+          "type": "number",
+          "default": 256,
+          "minimum": 16,
+          "maximum": 4096,
+          "description": "Maximum tokens to generate per completion."
+        },
+        "deepseekFim.temperature": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature. 0 = deterministic, higher = more creative."
+        },
+        "deepseekFim.timeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1000,
+          "maximum": 120000,
+          "description": "HTTP request timeout in milliseconds."
+        },
+        "deepseekFim.maxPrefixChars": {
+          "type": "number",
+          "default": 6000,
+          "minimum": 100,
+          "maximum": 50000,
+          "description": "Maximum characters before cursor to include as prefix context."
+        },
+        "deepseekFim.maxSuffixChars": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 100,
+          "maximum": 50000,
+          "description": "Maximum characters after cursor to include as suffix context."
+        },
+        "deepseekFim.maxPrefixLines": {
+          "type": "number",
+          "default": 100,
+          "minimum": 10,
+          "maximum": 500,
+          "description": "Maximum lines before cursor to include (applied after char limit)."
+        },
+        "deepseekFim.maxSuffixLines": {
+          "type": "number",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 500,
+          "description": "Maximum lines after cursor to include (applied after char limit)."
+        },
+        "deepseekFim.cacheSize": {
+          "type": "number",
+          "default": 500,
+          "minimum": 0,
+          "maximum": 10000,
+          "description": "LRU cache size. 0 disables caching of recent completions."
+        },
+        "deepseekFim.multilineCompletions": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "always",
+            "never",
+            "auto"
+          ],
+          "enumDescriptions": [
+            "Always allow multiline completions.",
+            "Only suggest single-line completions.",
+            "Auto-detect based on cursor context (after :, {, def, etc.)."
+          ],
+          "description": "When to suggest multi-line completions."
+        },
+        "deepseekFim.streamingTimeout": {
+          "type": "number",
+          "default": 500,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Max ms to wait for streaming before showing partial result."
+        },
+        "deepseekFim.disableInFiles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": ["**/*.min.js", "**/*.json", "**/secret*"],
+          "description": "Glob patterns for files where completions are disabled."
+        },
+        "deepseekFim.stopSequences": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Additional stop sequences for the model (appended to language defaults)."
+        },
+        "deepseekFim.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose debug logging to the output channel."
+        },
+        "deepseekFim.snippetSupport": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable SnippetString tab stops ($1, ${1:name}) in completions."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.js",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "tsc --noEmit",
+    "test": "npm run compile && node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.68.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.50.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
+    "typescript": "^5.3.0"
+  }
+}
