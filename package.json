@@ -2,7 +2,7 @@
   "name": "deepseek-fim-auto-complete",
   "displayName": "DeepSeek Autocomplete",
   "description": "AI-powered code completions using DeepSeek Fill-in-the-Middle API. Fast, context-aware inline suggestions for 14+ programming languages with streaming, caching, and multiline support.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "andyanamafaza",
   "license": "MIT",
   "icon": "icon.png",
@@ -112,7 +112,6 @@
           "default": true,
           "description": "Enable/disable inline completions globally."
         },
-
         "deepseekFim.model": {
           "type": "string",
           "default": "deepseek-v4-flash",
