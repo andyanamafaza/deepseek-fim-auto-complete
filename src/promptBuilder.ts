@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 
-const CHARS_PER_TOKEN = 4;
-
 export interface FimContext {
   prefix: string;
   suffix: string;
@@ -13,21 +11,34 @@ export class PromptBuilder {
     position: vscode.Position,
     maxPrefixLines: number,
     maxSuffixLines: number,
-    maxPrefixTokens?: number,
-    maxSuffixTokens?: number,
+    maxPrefixChars?: number,
+    maxSuffixChars?: number,
   ): FimContext {
     let prefix = this.getPrefix(document, position, maxPrefixLines);
     let suffix = this.getSuffix(document, position, maxSuffixLines);
 
-    if (maxPrefixTokens && maxPrefixTokens > 0) {
-      prefix = this.pruneByTokenBudget(prefix, maxPrefixTokens, true);
+    if (maxPrefixChars && maxPrefixChars > 0 && prefix.length > maxPrefixChars) {
+      prefix = prefix.slice(-maxPrefixChars);
     }
 
-    if (maxSuffixTokens && maxSuffixTokens > 0) {
-      suffix = this.pruneByTokenBudget(suffix, maxSuffixTokens, false);
+    if (maxSuffixChars && maxSuffixChars > 0 && suffix.length > maxSuffixChars) {
+      suffix = suffix.slice(0, maxSuffixChars);
     }
 
     return { prefix, suffix };
+  }
+
+  getRawPrefix(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    maxPrefixLines: number,
+    maxPrefixChars?: number,
+  ): string {
+    let prefix = this.getPrefix(document, position, maxPrefixLines);
+    if (maxPrefixChars && maxPrefixChars > 0 && prefix.length > maxPrefixChars) {
+      prefix = prefix.slice(-maxPrefixChars);
+    }
+    return prefix;
   }
 
   private getPrefix(document: vscode.TextDocument, position: vscode.Position, maxLines: number): string {
@@ -42,41 +53,5 @@ export class PromptBuilder {
     const endCharacter = document.lineAt(endLine).text.length;
     const suffixRange = new vscode.Range(position.line, position.character, endLine, endCharacter);
     return document.getText(suffixRange);
-  }
-
-  private estimateTokens(text: string): number {
-    return Math.ceil(text.length / CHARS_PER_TOKEN);
-  }
-
-  private pruneByTokenBudget(text: string, budget: number, fromStart: boolean): string {
-    if (this.estimateTokens(text) <= budget) return text;
-
-    const lines = text.split('\n');
-
-    if (fromStart) {
-      const result: string[] = [];
-      let tokenCount = 0;
-
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const lineTokens = this.estimateTokens(lines[i]);
-        if (tokenCount + lineTokens > budget) break;
-        result.unshift(lines[i]);
-        tokenCount += lineTokens;
-      }
-
-      return result.join('\n');
-    } else {
-      const result: string[] = [];
-      let tokenCount = 0;
-
-      for (let i = 0; i < lines.length; i++) {
-        const lineTokens = this.estimateTokens(lines[i]);
-        if (tokenCount + lineTokens > budget) break;
-        result.push(lines[i]);
-        tokenCount += lineTokens;
-      }
-
-      return result.join('\n');
-    }
   }
 }
