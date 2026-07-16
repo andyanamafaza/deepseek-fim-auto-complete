@@ -197,25 +197,15 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     let text = '';
     let hasContent = false;
 
-    const shortTimeout = setTimeout(() => {
-      // timeout only fires if stream is still going after N ms
-    }, needMultiline ? 5000 : this.config.streamingTimeout);
-
     for await (const chunk of stream) {
-      if (token.isCancellationRequested) {
-        clearTimeout(shortTimeout);
-        return undefined;
-      }
+      if (token.isCancellationRequested) return undefined;
       text += chunk;
       if (chunk.trim().length > 0) hasContent = true;
 
       if (!needMultiline && this.hasCompleteStatement(text)) {
-        clearTimeout(shortTimeout);
         break;
       }
     }
-
-    clearTimeout(shortTimeout);
 
     if (!text || !hasContent) return undefined;
     if (isWhitespaceOrEmpty(text) || isRepetitive(text)) return undefined;
