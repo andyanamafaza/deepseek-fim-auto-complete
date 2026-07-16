@@ -172,60 +172,58 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
     const { prompt, suffix: suf } = this.buildPrompt(prefix, suffix, languageId, filePath);
 
-    const langStops = getStopTokensForLanguage(languageId);
     const userStops = this.config.stopSequences || [];
+
+    const langStops = needMultiline ? [] : getStopTokensForLanguage(languageId);
+    const stop = [...langStops, ...userStops, ...(needMultiline ? ['\n\n\n\n'] : ['\n\n\n', '\r\n\r\n\r\n'])];
+    const effectiveMaxTokens = needMultiline ? Math.max(this.config.maxTokens, 1024) : this.config.maxTokens;
 
     const req: FimRequest = {
       prompt,
       suffix: suf,
-      maxTokens: this.config.maxTokens,
+      maxTokens: effectiveMaxTokens,
       temperature,
       topP: 0.95,
       model: this.config.model,
       apiKey,
       baseUrl: this.config.baseUrl,
       timeoutMs: this.config.timeoutMs,
-      stop: [...langStops, ...userStops],
+      stop,
     };
 
-    this.debug?.log(`Streaming: prefix=${prompt.length}ch, suffix=${suf.length}ch, temp=${temperature}, model=${req.model}, timeout=${req.timeoutMs}ms`);
+    this.debug?.log(`Streaming: prefix=${prompt.length}ch, suffix=${suf.length}ch, temp=${temperature}, model=${req.model}, multiline=${needMultiline}`);
 
     const stream = this.client.streamComplete(req, token);
     let text = '';
-    let fulfilled = false;
+    let hasContent = false;
 
-    const chunkTimeout = setTimeout(() => {
-      fulfilled = true;
-    }, this.config.streamingTimeout);
+    const shortTimeout = setTimeout(() => {
+      // timeout only fires if stream is still going after N ms
+    }, needMultiline ? 5000 : this.config.streamingTimeout);
 
     for await (const chunk of stream) {
-      if (token.isCancellationRequested) return undefined;
-      text += chunk;
-
-      if (needMultiline && text.includes('\n')) {
-        clearTimeout(chunkTimeout);
-        fulfilled = true;
-        break;
+      if (token.isCancellationRequested) {
+        clearTimeout(shortTimeout);
+        return undefined;
       }
+      text += chunk;
+      if (chunk.trim().length > 0) hasContent = true;
 
       if (!needMultiline && this.hasCompleteStatement(text)) {
-        clearTimeout(chunkTimeout);
-        fulfilled = true;
+        clearTimeout(shortTimeout);
         break;
       }
     }
 
-    if (!fulfilled) {
-      clearTimeout(chunkTimeout);
-    }
+    clearTimeout(shortTimeout);
 
-    if (!text) return undefined;
+    if (!text || !hasContent) return undefined;
     if (isWhitespaceOrEmpty(text) || isRepetitive(text)) return undefined;
 
     const trimmed = this.trimOverlapWithSuffix(text, suffix);
     if (isWhitespaceOrEmpty(trimmed)) return undefined;
 
-    this.debug?.log(`Completion: ${trimmed.length}ch, reason=${fulfilled ? 'fulfilled' : 'timeout'}`);
+    this.debug?.log(`Completion: ${trimmed.length}ch`);
     return trimmed;
   }
 
