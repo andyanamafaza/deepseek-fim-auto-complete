@@ -85,6 +85,14 @@
         "title": "DeepSeek Autocomplete: Select Model"
       },
       {
+        "command": "deepseekFim.setTemperature",
+        "title": "DeepSeek Autocomplete: Set Temperature"
+      },
+      {
+        "command": "deepseekFim.setMaxTokens",
+        "title": "DeepSeek Autocomplete: Set Max Tokens"
+      },
+      {
         "command": "deepseekFim.deleteApiKey",
         "title": "DeepSeek Autocomplete: Delete API Key"
       }
@@ -104,11 +112,7 @@
           "default": true,
           "description": "Enable/disable inline completions globally."
         },
-        "deepseekFim.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "DeepSeek API key. Set via command palette for secure storage in OS keychain."
-        },
+
         "deepseekFim.model": {
           "type": "string",
           "default": "deepseek-v4-flash",

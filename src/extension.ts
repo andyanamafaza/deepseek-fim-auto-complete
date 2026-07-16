@@ -82,6 +82,57 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.setTemperature', async () => {
+      const current = config.temperature;
+      const TEMPS = [
+        { label: '0.0', description: 'Deterministic — most predictable', detail: current === 0 ? 'current' : undefined },
+        { label: '0.1', description: 'Very conservative', detail: current === 0.1 ? 'current' : undefined },
+        { label: '0.2', description: 'Slightly creative', detail: current === 0.2 ? 'current' : undefined },
+        { label: '0.3', description: 'Balanced', detail: current === 0.3 ? 'current' : undefined },
+        { label: '0.5', description: 'Moderate creativity', detail: current === 0.5 ? 'current' : undefined },
+        { label: '0.7', description: 'Creative', detail: current === 0.7 ? 'current' : undefined },
+        { label: '1.0', description: 'Very creative', detail: current === 1.0 ? 'current' : undefined },
+      ];
+
+      const selection = await vscode.window.showQuickPick(TEMPS, {
+        placeHolder: `Current temperature: ${current}`,
+        title: 'Set Completion Temperature',
+      });
+
+      if (selection) {
+        await config.update('temperature', parseFloat(selection.label));
+        vscode.window.showInformationMessage(`Temperature set to ${selection.label}`);
+        debugChannel?.log(`Temperature changed to ${selection.label}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.setMaxTokens', async () => {
+      const current = config.maxTokens;
+      const TOKEN_OPTIONS = [
+        { label: '64', description: 'Very short — single expressions' },
+        { label: '128', description: 'Short — single line', detail: current === 128 ? 'current' : undefined },
+        { label: '256', description: 'Default — good for most cases', detail: current === 256 ? 'current' : undefined },
+        { label: '512', description: 'Long — multi-line blocks', detail: current === 512 ? 'current' : undefined },
+        { label: '1024', description: 'Very long — full functions', detail: current === 1024 ? 'current' : undefined },
+        { label: '2048', description: 'Maximum practical — entire methods', detail: current === 2048 ? 'current' : undefined },
+      ];
+
+      const selection = await vscode.window.showQuickPick(TOKEN_OPTIONS, {
+        placeHolder: `Current max tokens: ${current}`,
+        title: 'Set Max Tokens per Completion',
+      });
+
+      if (selection) {
+        await config.update('maxTokens', parseInt(selection.label, 10));
+        vscode.window.showInformationMessage(`Max tokens set to ${selection.label}`);
+        debugChannel?.log(`Max tokens changed to ${selection.label}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('deepseekFim.setApiKey', async () => {
       const currentKey = await config.getApiKey();
       const hasKey = !!currentKey;
@@ -89,7 +140,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const value = await vscode.window.showInputBox({
         prompt: hasKey ? 'Change your DeepSeek API key (leave empty to keep current)' : 'Enter your DeepSeek API key',
         placeHolder: 'sk-...',
-        password: !hasKey,
+        password: true,
         ignoreFocusOut: true,
         validateInput: (input: string) => {
           if (input && input.length > 0 && !input.startsWith('sk-')) {
