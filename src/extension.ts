@@ -26,7 +26,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const isDebug = config.get<boolean>('debug', false);
 
   debugChannel = new DebugChannel('DeepSeek Autocomplete', isDebug);
-  statsTracker = new StatsTracker(context.globalState);
+  statsTracker = new StatsTracker(context.globalState, () => config.model);
   statusBar = new StatusBarManager(config, statsTracker);
 
   const sensitiveFilter = new SensitiveFileFilter();
@@ -84,10 +84,12 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('deepseekFim.setApiKey', async () => {
       const currentKey = await config.getApiKey();
+      const hasKey = !!currentKey;
+
       const value = await vscode.window.showInputBox({
-        prompt: 'Enter your DeepSeek API key',
+        prompt: hasKey ? 'Change your DeepSeek API key (leave empty to keep current)' : 'Enter your DeepSeek API key',
         placeHolder: 'sk-...',
-        password: !currentKey,
+        password: !hasKey,
         ignoreFocusOut: true,
         validateInput: (input: string) => {
           if (input && input.length > 0 && !input.startsWith('sk-')) {
@@ -97,36 +99,72 @@ export async function activate(context: vscode.ExtensionContext) {
         },
       });
 
-      if (value !== undefined) {
-        const client = new DeepSeekClient();
-        debugChannel?.log('Validating API key...');
+      if (value === undefined) return;
 
-        const validation = value ? await client.validateApiKey(value) : { valid: true, message: '' };
+      const isEmpty = value.trim() === '';
 
-        if (value && !validation.valid) {
-          const retry = await vscode.window.showErrorMessage(
-            `Invalid API key: ${validation.message}`,
-            'Try Again'
-          );
-          if (retry === 'Try Again') {
-            vscode.commands.executeCommand('deepseekFim.setApiKey');
-          }
+      if (isEmpty && hasKey) {
+        const confirm = await vscode.window.showWarningMessage(
+          'Remove saved API key? Completions will stop working.',
+          'Remove',
+          'Cancel'
+        );
+        if (confirm !== 'Remove') return;
+
+        await config.setApiKey('');
+        vscode.window.showInformationMessage('API key removed from OS keychain.');
+        debugChannel?.log('API key removed');
+        statusBar?.update();
+        return;
+      }
+
+      if (!value) return;
+
+      await config.setApiKey(value);
+      debugChannel?.log('API key saved. Validating...');
+
+      const client = new DeepSeekClient();
+      const validation = await client.validateApiKey(value);
+
+      if (!validation.valid) {
+        const action = await vscode.window.showWarningMessage(
+          `API key saved but validation returned: ${validation.message}`,
+          'Try Again',
+          'Ignore'
+        );
+        if (action === 'Try Again') {
+          vscode.commands.executeCommand('deepseekFim.setApiKey');
           return;
         }
-
-        await config.setApiKey(value);
-        const hasKey = !!value;
-
-        if (hasKey) {
-          vscode.window.showInformationMessage('API key saved securely in OS keychain.');
-          debugChannel?.log('API key validated and saved');
-        } else {
-          vscode.window.showInformationMessage('API key removed.');
-          debugChannel?.log('API key removed');
-        }
-
-        statusBar?.update();
+      } else {
+        vscode.window.showInformationMessage('API key saved and verified in OS keychain.');
+        debugChannel?.log('API key validated and saved');
       }
+
+      statusBar?.update();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.deleteApiKey', async () => {
+      const hasKey = !!(await config.getApiKey());
+      if (!hasKey) {
+        vscode.window.showInformationMessage('No API key stored.');
+        return;
+      }
+
+      const confirm = await vscode.window.showWarningMessage(
+        'Remove DeepSeek API key from OS keychain? Completions will be disabled.',
+        'Remove',
+        'Cancel'
+      );
+
+      if (confirm !== 'Remove') return;
+
+      await config.setApiKey('');
+      vscode.window.showInformationMessage('API key removed from OS keychain.');
+      debugChannel?.log('API key deleted');
+      statusBar?.update();
     })
   );
 

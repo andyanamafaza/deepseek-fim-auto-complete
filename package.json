@@ -20,8 +20,7 @@
   },
   "categories": [
     "Programming Languages",
-    "Machine Learning",
-    "Artificial Intelligence"
+    "Machine Learning"
   ],
   "keywords": [
     "deepseek",
@@ -84,6 +83,10 @@
       {
         "command": "deepseekFim.selectModel",
         "title": "DeepSeek Autocomplete: Select Model"
+      },
+      {
+        "command": "deepseekFim.deleteApiKey",
+        "title": "DeepSeek Autocomplete: Delete API Key"
       }
     ],
     "keybindings": [
