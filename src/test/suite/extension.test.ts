@@ -21,6 +21,7 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.ok(commands.includes('deepseekFim.showStats'), 'showStats command');
     assert.ok(commands.includes('deepseekFim.showLog'), 'showLog command');
     assert.ok(commands.includes('deepseekFim.selectModel'), 'selectModel command');
+    assert.ok(commands.includes('deepseekFim.deleteApiKey'), 'deleteApiKey command');
   });
 
   test('Toggle command should work', async () => {
