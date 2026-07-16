@@ -21,6 +21,7 @@ export interface FimRequest {
 export interface FimResponse {
   text: string;
   finishReason: string | null;
+  tokensUsed?: number;
 }
 
 export class DeepSeekClient {
@@ -145,7 +146,8 @@ export class DeepSeekClient {
               const parsed = JSON.parse(data);
               const text = parsed.choices?.[0]?.text || '';
               const finishReason = parsed.choices?.[0]?.finish_reason || null;
-              resolve({ text, finishReason });
+              const tokensUsed = parsed.usage?.total_tokens;
+              resolve({ text, finishReason, tokensUsed });
             } catch {
               resolve(undefined);
             }
@@ -223,6 +225,7 @@ export class DeepSeekClient {
   async validateApiKey(apiKey: string): Promise<{ valid: boolean; message: string }> {
     return new Promise((resolve) => {
       const url = new URL('https://api.deepseek.com/user/balance');
+      let timedOut = false;
 
       const request = https.get(
         {
@@ -234,20 +237,30 @@ export class DeepSeekClient {
           },
         },
         (response) => {
+          let body = '';
+          response.on('data', (chunk: Buffer) => { body += chunk.toString(); });
           response.on('end', () => {
+            if (timedOut) return;
             if (response.statusCode === 200) {
               resolve({ valid: true, message: 'API key is valid' });
             } else if (response.statusCode === 401) {
               resolve({ valid: false, message: 'Invalid API key (401 Unauthorized)' });
             } else {
-              resolve({ valid: false, message: `Unexpected response: ${response.statusCode}` });
+              resolve({ valid: false, message: `Unexpected response: ${response.statusCode} — ${body.slice(0, 200)}` });
             }
           });
         }
       );
 
-      request.on('error', () => resolve({ valid: false, message: 'Could not reach DeepSeek API' }));
-      request.end();
+      request.on('timeout', () => {
+        timedOut = true;
+        request.destroy();
+        resolve({ valid: false, message: 'Validation request timed out. Key may still work.' });
+      });
+
+      request.on('error', () => {
+        if (!timedOut) resolve({ valid: false, message: 'Could not reach DeepSeek API' });
+      });
     });
   }
 }
