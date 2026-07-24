@@ -36,11 +36,23 @@ export class MultilineClassifier {
         const line = lines[i].trim();
         if (line.length === 0) continue;
         if (this.lineIsCodeStart(line)) return true;
+        if (this.isInsideBlock(lines, i)) return true;
         break;
       }
     }
 
     return false;
+  }
+
+  private isInsideBlock(lines: string[], lineIndex: number): boolean {
+    let braceCount = 0;
+    for (let i = 0; i <= lineIndex; i++) {
+      for (const ch of lines[i]) {
+        if (ch === '{') braceCount++;
+        if (ch === '}') braceCount--;
+      }
+    }
+    return braceCount > 0;
   }
 
   private lineIsCodeStart(line: string): boolean {
