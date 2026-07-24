@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 
 export class DebugChannel {
   private channel: vscode.OutputChannel;
-  private enabled: boolean;
 
-  constructor(name: string, enabled: boolean) {
+  constructor(name: string, _enabled: boolean) {
     this.channel = vscode.window.createOutputChannel(name);
-    this.enabled = enabled;
+  }
+
+  get enabled(): boolean {
+    return vscode.workspace.getConfiguration('deepseekFim').get<boolean>('debug', false);
   }
 
   log(message: string): void {

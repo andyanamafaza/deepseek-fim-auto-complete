@@ -12,7 +12,7 @@ const SENSITIVE_PATTERNS = [
   /\.gitconfig/i,
   /\.netrc/i,
   /\.aws[\\/]/i,
-  /config\.json$/i,
+  /[\\/]\.?config\.json$/i,
 ];
 
 export class SensitiveFileFilter {

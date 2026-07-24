@@ -4,8 +4,15 @@ const SECRET_API_KEY = 'deepseekFim.apiKey';
 
 export class Config {
   private readonly section = 'deepseekFim';
+  private apiKeyCached: string | undefined = undefined;
 
-  constructor(private secrets: vscode.SecretStorage) {}
+  constructor(private secrets: vscode.SecretStorage) {
+    secrets.onDidChange((e) => {
+      if (e.key === SECRET_API_KEY) {
+        this.apiKeyCached = undefined;
+      }
+    });
+  }
 
   get<T>(key: string, defaultValue: T): T {
     return vscode.workspace.getConfiguration(this.section).get<T>(key, defaultValue);
@@ -15,11 +22,18 @@ export class Config {
     return vscode.workspace.getConfiguration(this.section).update(key, value, vscode.ConfigurationTarget.Global);
   }
 
-  async getApiKey(): Promise<string> {
-    return (await this.secrets.get(SECRET_API_KEY)) || '';
+    async getApiKey(): Promise<string> {
+    if (this.apiKeyCached !== undefined) return this.apiKeyCached;
+    this.apiKeyCached = (await this.secrets.get(SECRET_API_KEY)) || '';
+    return this.apiKeyCached;
+  }
+
+  invalidateApiKeyCache(): void {
+    this.apiKeyCached = undefined;
   }
 
   async setApiKey(key: string): Promise<void> {
+    this.apiKeyCached = key || '';
     if (key) {
       await this.secrets.store(SECRET_API_KEY, key);
     } else {
@@ -84,7 +98,7 @@ export class Config {
   }
 
   get streamingTimeout(): number {
-    return this.get<number>('streamingTimeout', 500);
+    return this.get<number>('streamingTimeout', 2000);
   }
 
   get stopSequences(): string[] {
