@@ -80,18 +80,45 @@ export class DeepSeekClient {
       stream: true,
     });
 
-    try {
-      const stream = await this.makeStreamRequest(req.apiKey, body, token, req.baseUrl, req.timeoutMs);
-      if (!stream) return;
+    let attempt = 0;
+    let hasYielded = false;
 
-      for await (const chunk of stream) {
-        if (token.isCancellationRequested) return;
-        yield chunk;
+    while (attempt <= MAX_RETRIES) {
+      if (token.isCancellationRequested) return;
+
+      try {
+        const stream = await this.makeStreamRequest(req.apiKey, body, token, req.baseUrl, req.timeoutMs);
+        if (!stream) return;
+
+        for await (const chunk of stream) {
+          if (token.isCancellationRequested) return;
+          hasYielded = true;
+          yield chunk;
+        }
+
+        if (!token.isCancellationRequested) {
+          return;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message === 'CANCELLED') return;
+
+        if (hasYielded) {
+          safeWarn(`[DeepSeek Autocomplete] Stream interrupted after ${attempt} retries: ${message}`);
+          return;
+        }
+
+        if (attempt < MAX_RETRIES && this.isRetryable(message)) {
+          const delay = Math.pow(2, attempt) * 500;
+          safeWarn(`[DeepSeek Autocomplete] Stream retry (${attempt + 1}/${MAX_RETRIES}) after ${delay}ms: ${message}`);
+          attempt++;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        safeError(`[DeepSeek Autocomplete] Stream error: ${message}`);
+        return;
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message === 'CANCELLED') return;
-      safeError(`[DeepSeek Autocomplete] Stream error: ${message}`);
     }
   }
 
@@ -127,6 +154,7 @@ export class DeepSeekClient {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
             'Content-Length': Buffer.byteLength(body),
+            'Accept-Encoding': 'gzip, deflate',
           },
         },
         (response) => {
@@ -192,6 +220,7 @@ export class DeepSeekClient {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
             'Content-Length': Buffer.byteLength(body),
+            'Accept-Encoding': 'gzip, deflate',
           },
         },
         (response) => {

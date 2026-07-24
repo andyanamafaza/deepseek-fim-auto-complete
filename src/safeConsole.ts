@@ -1,11 +1,21 @@
 let consoleBroken = false;
+let consoleBrokenTimer: ReturnType<typeof setTimeout> | null = null;
+
+function markBroken(): void {
+  consoleBroken = true;
+  if (consoleBrokenTimer) clearTimeout(consoleBrokenTimer);
+  consoleBrokenTimer = setTimeout(() => {
+    consoleBroken = false;
+    consoleBrokenTimer = null;
+  }, 10000);
+}
 
 export function safeWarn(...args: unknown[]): void {
   if (consoleBroken) return;
   try {
     console.warn(...args);
   } catch {
-    consoleBroken = true;
+    markBroken();
   }
 }
 
@@ -14,7 +24,7 @@ export function safeError(...args: unknown[]): void {
   try {
     console.error(...args);
   } catch {
-    consoleBroken = true;
+    markBroken();
   }
 }
 
@@ -23,6 +33,6 @@ export function safeLog(...args: unknown[]): void {
   try {
     console.log(...args);
   } catch {
-    consoleBroken = true;
+    markBroken();
   }
 }
