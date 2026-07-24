@@ -4,6 +4,8 @@ import { StatsTracker } from './statsTracker';
 
 export class StatusBarManager {
   private item: vscode.StatusBarItem;
+  private suggestionActive = false;
+  private pendingRestore = false;
 
   constructor(
     private config: Config,
@@ -16,6 +18,8 @@ export class StatusBarManager {
   }
 
   async update(): Promise<void> {
+    if (this.suggestionActive) return;
+
     const hasKey = !!(await this.config.getApiKey());
 
     if (!this.config.enabled) {
@@ -41,8 +45,31 @@ export class StatusBarManager {
     this.item.backgroundColor = undefined;
   }
 
+  setSuggestionInfo(tokenCount: number, alternatives: number): void {
+    this.suggestionActive = true;
+    this.item.text = `$(sparkle) DeepSeek ${tokenCount}t`;
+    this.item.tooltip = `DeepSeek Suggestion: ${tokenCount} tokens | ${alternatives} alternatives | Tab to accept, Esc to dismiss`;
+    this.item.backgroundColor = undefined;
+
+    if (this.pendingRestore) {
+      this.pendingRestore = false;
+    }
+  }
+
+  clearSuggestion(): void {
+    this.suggestionActive = false;
+    this.pendingRestore = true;
+    setTimeout(() => {
+      if (!this.suggestionActive) {
+        this.update();
+      }
+      this.pendingRestore = false;
+    }, 100);
+  }
+
   setLoading(loading: boolean): void {
     if (loading) {
+      this.suggestionActive = false;
       this.item.text = '$(sync~spin) DeepSeek';
       this.item.tooltip = 'Generating completion...';
     } else {

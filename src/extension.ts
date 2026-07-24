@@ -6,6 +6,7 @@ import { DebugChannel } from './debugChannel';
 import { StatsTracker } from './statsTracker';
 import { SensitiveFileFilter } from './sensitiveFileFilter';
 import { DeepSeekClient } from './deepseekClient';
+import { validateConfig } from './configValidator';
 import { safeLog } from './safeConsole';
 
 let providerDisposable: vscode.Disposable | undefined;
@@ -26,12 +27,29 @@ export async function activate(context: vscode.ExtensionContext) {
   const isDebug = config.get<boolean>('debug', false);
 
   debugChannel = new DebugChannel('DeepSeek Autocomplete', isDebug);
-  statsTracker = new StatsTracker(context.globalState, () => config.model);
+  statsTracker = new StatsTracker(
+    context.globalState,
+    () => config.model,
+    (rate) => {
+      const action = 'Try v4-pro';
+      vscode.window.showInformationMessage(
+        `Acceptance rate is ${rate}% with v4-flash. Switch to v4-pro for better quality?`,
+        action
+      ).then((a) => {
+        if (a === action) {
+          config.update('model', 'deepseek-v4-pro');
+          statusBar?.update();
+          debugChannel?.log('Auto-switched to v4-pro due to low acceptance rate');
+        }
+      });
+    },
+  );
   statusBar = new StatusBarManager(config, statsTracker);
 
   const sensitiveFilter = new SensitiveFileFilter();
 
   provider = new CompletionProvider(config, statusBar, sensitiveFilter, debugChannel, statsTracker);
+  statsTracker.onAcceptance = (acceptedText) => provider?.prefetchNextCompletion(acceptedText);
 
   providerDisposable = vscode.languages.registerInlineCompletionItemProvider(
     { pattern: '**' },
@@ -220,6 +238,64 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.benchmarkModels', async () => {
+      const apiKey = await config.getApiKey();
+      if (!apiKey) {
+        vscode.window.showErrorMessage('Set an API key first.');
+        return;
+      }
+
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage('Open a file to benchmark against.');
+        return;
+      }
+
+      const doc = editor.document;
+      const pos = editor.selection.active;
+      const prefix = doc.getText(new vscode.Range(Math.max(0, pos.line - 10), 0, pos.line, pos.character));
+      const suffix = doc.getText(new vscode.Range(pos.line, pos.character, Math.min(doc.lineCount - 1, pos.line + 5), doc.lineAt(Math.min(doc.lineCount - 1, pos.line + 5)).text.length));
+
+      if (!prefix.trim()) {
+        vscode.window.showErrorMessage('Need code context around cursor for benchmark.');
+        return;
+      }
+
+      const client = new DeepSeekClient();
+      const results: string[] = [];
+      const models = ['deepseek-v4-flash', 'deepseek-v4-pro'];
+
+      await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Benchmarking models...' }, async () => {
+        for (const model of models) {
+          const start = Date.now();
+          const result = await client.complete({
+            model,
+            prompt: prefix,
+            suffix,
+            maxTokens: 128,
+            temperature: 0,
+            apiKey,
+            stop: ['\n\n\n'],
+          }, new vscode.CancellationTokenSource().token);
+          const elapsed = Date.now() - start;
+
+          if (result) {
+            const preview = result.text.replace(/\n/g, '\\n').slice(0, 60);
+            results.push(`${model}: ${elapsed}ms — "${preview}"`);
+          } else {
+            results.push(`${model}: failed`);
+          }
+        }
+      });
+
+      vscode.window.showInformationMessage(results.join(' | '), 'Copy').then((a) => {
+        if (a === 'Copy') vscode.env.clipboard.writeText(results.join('\n'));
+      });
+      debugChannel?.log('Benchmark: ' + results.join(' | '));
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('deepseekFim.showStats', () => {
       if (statsTracker) {
         vscode.window.showInformationMessage(statsTracker.summary);
@@ -232,6 +308,64 @@ export async function activate(context: vscode.ExtensionContext) {
       debugChannel?.show();
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.acceptNextWord', async () => {
+      try {
+        const handled = await vscode.commands.executeCommand<boolean>('editorAction.inlineCompletion.acceptNextWord');
+        if (!handled) {
+          await vscode.commands.executeCommand('editor.action.inlineCompletion.accept');
+        }
+      } catch {
+        await vscode.commands.executeCommand('editor.action.inlineCompletion.accept');
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.nextSuggestion', () => {
+      vscode.commands.executeCommand('editorAction.inlineCompletion.showNextInlineCompletion');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.previousSuggestion', () => {
+      vscode.commands.executeCommand('editorAction.inlineCompletion.showPreviousInlineCompletion');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.acceptOnEnter', async () => {
+      const acceptOnEnter = vscode.workspace.getConfiguration('deepseekFim').get<boolean>('acceptOnEnter', false);
+      if (!acceptOnEnter) {
+        await vscode.commands.executeCommand('type', { source: 'keyboard', text: '\n' });
+        return;
+      }
+      await vscode.commands.executeCommand('editor.action.inlineCompletion.accept');
+    })
+  );
+
+  const hoverDisposable = vscode.languages.registerHoverProvider({ pattern: '**' }, {
+    provideHover(document, position) {
+      if (!provider || !vscode.window.activeTextEditor) return undefined;
+
+      const editor = vscode.window.activeTextEditor;
+      const cursor = editor.selection.active;
+      if (Math.abs(position.line - cursor.line) > 1) return undefined;
+      if (Math.abs(position.character - cursor.character) > 20) return undefined;
+
+      const alts = provider.currentAlternatives;
+      if (alts.length < 2) return undefined;
+
+      const md = alts.slice(0, 5).map((alt, i) => {
+        const preview = alt.text.replace(/\n/g, '↵').substring(0, 80);
+        return `**Alt ${i + 1}** (t=${alt.temperature}): \`${preview}\``;
+      }).join('\n\n---\n\n');
+
+      return new vscode.Hover(new vscode.MarkdownString(md ? `Alternatives available:\n\n${md}` : ''));
+    }
+  });
+  context.subscriptions.push(hoverDisposable);
 
   if (context.globalState.get('deepseekFim.firstActivation') !== true) {
     context.globalState.update('deepseekFim.firstActivation', true);
@@ -249,6 +383,26 @@ export async function activate(context: vscode.ExtensionContext) {
 
   statusBar.update();
   debugChannel?.log('Extension activated');
+
+  const configWarnings = validateConfig(config);
+  for (const w of configWarnings) {
+    debugChannel?.log(`Config warning: ${w.setting} — ${w.message}`);
+  }
+  if (configWarnings.length > 0) {
+    debugChannel?.show();
+  }
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration('deepseekFim')) return;
+      statusBar?.update();
+      const warnings = validateConfig(config);
+      for (const w of warnings) {
+        debugChannel?.log(`Config re-check: ${w.setting} — ${w.message}`);
+      }
+    })
+  );
+
   safeLog('DeepSeek Autocomplete activated');
 }
 
