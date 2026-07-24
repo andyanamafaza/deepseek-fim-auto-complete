@@ -40,26 +40,45 @@ function isValidStats(value: unknown): value is CompletionStats {
 export class StatsTracker {
   private stats: CompletionStats;
   private onDidChangeTextDocument: vscode.Disposable | undefined;
-  private lastShownText: string | undefined;
+  private lastShownTexts: Set<string> = new Set();
+  private readonly MAX_SHOWN_TEXTS = 100;
+  private suggestionShown = false;
 
   constructor(
     private globalState: vscode.Memento,
     private getModel?: () => string,
+    private onLowAcceptance?: (rate: number) => void,
+    public onAcceptance?: (acceptedText: string) => void,
   ) {
     const stored = this.globalState.get<unknown>(STATS_KEY);
     this.stats = isValidStats(stored) ? stored : { ...DEFAULT_STATS };
 
     this.onDidChangeTextDocument = vscode.workspace.onDidChangeTextDocument((event) => {
-      if (!this.lastShownText) return;
+      if (this.lastShownTexts.size === 0) return;
       if (event.contentChanges.length === 0) return;
 
       const change = event.contentChanges[0];
-      if (change.text === this.lastShownText) {
+      if (this.lastShownTexts.has(change.text)) {
         this.stats.accepted++;
         this.persist();
-        this.lastShownText = undefined;
+        const accepted = change.text;
+        this.lastShownTexts.clear();
+        this.checkAcceptanceRate();
+        this.onAcceptance?.(accepted);
       }
     });
+  }
+
+  private checkAcceptanceRate(): void {
+    if (this.suggestionShown) return;
+    if (this.stats.shown < 30) return;
+    if (this.acceptanceRate > 25) return;
+    this.suggestionShown = true;
+
+    const model = this.getModel?.() || 'deepseek-v4-flash';
+    if (model === 'deepseek-v4-flash') {
+      this.onLowAcceptance?.(this.acceptanceRate);
+    }
   }
 
   trackShown(text: string, exactTokens?: number): void {
@@ -72,7 +91,11 @@ export class StatsTracker {
     const rate = COST_PER_MTOKEN[model] || 0.28;
     this.stats.estimatedCost += (tokens / 1_000_000) * rate;
 
-    this.lastShownText = text;
+    this.lastShownTexts.add(text);
+    while (this.lastShownTexts.size > this.MAX_SHOWN_TEXTS) {
+      const firstKey = this.lastShownTexts.values().next().value;
+      if (firstKey) this.lastShownTexts.delete(firstKey);
+    }
     this.persist();
   }
 
@@ -105,5 +128,6 @@ export class StatsTracker {
 
   dispose(): void {
     this.onDidChangeTextDocument?.dispose();
+    this.lastShownTexts.clear();
   }
 }
