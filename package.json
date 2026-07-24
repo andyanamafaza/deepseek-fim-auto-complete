@@ -1,8 +1,8 @@
 {
   "name": "deepseek-fim-auto-complete",
   "displayName": "DeepSeek Autocomplete",
-  "description": "AI-powered code completions using DeepSeek Fill-in-the-Middle API. Fast, context-aware inline suggestions for 14+ programming languages with streaming, caching, and multiline support.",
-  "version": "0.0.3",
+  "description": "AI-powered code completions using DeepSeek Fill-in-the-Middle API. Context-aware inline suggestions with cross-file context, git diff awareness, TF-IDF similar code matching, diagnostics, adaptive streaming, true LRU cache, gzip, and multi-line support for 16+ languages.",
+  "version": "0.1.0",
   "publisher": "andyanamafaza",
   "license": "MIT",
   "icon": "icon.png",
@@ -20,7 +20,9 @@
   },
   "categories": [
     "Programming Languages",
-    "Machine Learning"
+    "Machine Learning",
+    "Formatters",
+    "Other"
   ],
   "keywords": [
     "deepseek",
@@ -33,6 +35,9 @@
     "inline completion",
     "code suggestions",
     "deepseek coder",
+    "ghost text",
+    "multi-line",
+    "streaming",
     "vscode extension"
   ],
   "activationEvents": [
@@ -95,6 +100,22 @@
       {
         "command": "deepseekFim.deleteApiKey",
         "title": "DeepSeek Autocomplete: Delete API Key"
+      },
+      {
+        "command": "deepseekFim.benchmarkModels",
+        "title": "DeepSeek Autocomplete: Benchmark Models"
+      },
+      {
+        "command": "deepseekFim.acceptNextWord",
+        "title": "DeepSeek Autocomplete: Accept Next Word"
+      },
+      {
+        "command": "deepseekFim.nextSuggestion",
+        "title": "DeepSeek Autocomplete: Next Suggestion"
+      },
+      {
+        "command": "deepseekFim.previousSuggestion",
+        "title": "DeepSeek Autocomplete: Previous Suggestion"
       }
     ],
     "keybindings": [
@@ -102,6 +123,21 @@
         "command": "deepseekFim.toggle",
         "key": "ctrl+shift+.",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "deepseekFim.acceptNextWord",
+        "key": "ctrl+right",
+        "when": "editorTextFocus && inlineSuggestionVisible"
+      },
+      {
+        "command": "deepseekFim.nextSuggestion",
+        "key": "alt+]",
+        "when": "editorTextFocus && inlineSuggestionVisible"
+      },
+      {
+        "command": "deepseekFim.previousSuggestion",
+        "key": "alt+[",
+        "when": "editorTextFocus && inlineSuggestionVisible"
       }
     ],
     "configuration": {
@@ -153,7 +189,7 @@
           "default": 256,
           "minimum": 16,
           "maximum": 4096,
-          "description": "Maximum tokens to generate per completion."
+          "description": "Max tokens per completion. Auto-bumps to 1024 for multi-line."
         },
         "deepseekFim.temperature": {
           "type": "number",
@@ -202,7 +238,7 @@
           "default": 500,
           "minimum": 0,
           "maximum": 10000,
-          "description": "LRU cache size. 0 disables caching of recent completions."
+          "description": "LRU cache entries. 0 = disabled. Cache avoids repeat API calls for common prefixes."
         },
         "deepseekFim.multilineCompletions": {
           "type": "string",
@@ -213,18 +249,18 @@
             "auto"
           ],
           "enumDescriptions": [
-            "Always allow multiline completions.",
-            "Only suggest single-line completions.",
-            "Auto-detect based on cursor context (after :, {, def, etc.)."
+            "Always allow multiline completions — full functions and blocks.",
+            "Only single-line completions — stops at first statement end.",
+            "Auto-detect based on cursor context (after :, {, def, class, if, etc.)."
           ],
           "description": "When to suggest multi-line completions."
         },
         "deepseekFim.streamingTimeout": {
           "type": "number",
-          "default": 500,
+          "default": 2000,
           "minimum": 100,
-          "maximum": 5000,
-          "description": "Max ms to wait for streaming before showing partial result."
+          "maximum": 10000,
+          "description": "Single-line early-break timeout in ms. Multi-line uses HTTP timeout."
         },
         "deepseekFim.disableInFiles": {
           "type": "array",
@@ -256,6 +292,16 @@
           "type": "boolean",
           "default": false,
           "description": "Enable SnippetString tab stops ($1, ${1:name}) in completions."
+        },
+        "deepseekFim.acceptOnEnter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Accept inline completion on Enter (in addition to Tab)."
+        },
+        "deepseekFim.alwaysShowCompletions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show completions immediately on every keystroke (bypasses debounce). May increase API usage."
         }
       }
     }
@@ -269,7 +315,7 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^20.0.0",
+    "@types/node": "^20.19.43",
     "@types/vscode": "^1.68.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",

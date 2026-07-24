@@ -24,6 +24,10 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.ok(commands.includes('deepseekFim.deleteApiKey'), 'deleteApiKey command');
     assert.ok(commands.includes('deepseekFim.setTemperature'), 'setTemperature command');
     assert.ok(commands.includes('deepseekFim.setMaxTokens'), 'setMaxTokens command');
+    assert.ok(commands.includes('deepseekFim.benchmarkModels'), 'benchmarkModels command');
+    assert.ok(commands.includes('deepseekFim.acceptNextWord'), 'acceptNextWord command');
+    assert.ok(commands.includes('deepseekFim.nextSuggestion'), 'nextSuggestion command');
+    assert.ok(commands.includes('deepseekFim.previousSuggestion'), 'previousSuggestion command');
   });
 
   test('Toggle command should work', async () => {
@@ -49,6 +53,8 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.strictEqual(config.get<boolean>('debug'), false);
     assert.strictEqual(config.get<string>('baseUrl'), 'https://api.deepseek.com/beta');
     assert.strictEqual(config.get<number>('timeoutMs'), 10000);
+    assert.strictEqual(config.get<boolean>('acceptOnEnter'), false);
+    assert.strictEqual(config.get<boolean>('alwaysShowCompletions'), false);
     assert.deepStrictEqual(config.get<string[]>('disableInFiles'), []);
     assert.deepStrictEqual(config.get<string[]>('stopSequences'), []);
   });
@@ -63,6 +69,16 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.strictEqual(result2, false, 'Last call should proceed');
   });
 
+  test('Debouncer clear should reset state', async () => {
+    const debouncer = new Debouncer();
+    const p1 = debouncer.wait(100);
+    debouncer.clear();
+    const p2 = debouncer.wait(50);
+    const [r1, r2] = await Promise.all([p1, p2]);
+    assert.strictEqual(r1, true, 'Cleared request should be stale');
+    assert.strictEqual(r2, false, 'Current request should proceed');
+  });
+
   test('Cache should store and retrieve', () => {
     const cache = new CompletionCache(10);
     cache.set('def hello(', 'world');
@@ -73,6 +89,15 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.strictEqual(lookup!.completion, 'world');
   });
 
+  test('Cache should evict oldest when at capacity', () => {
+    const cache = new CompletionCache(2);
+    cache.set('a', '1');
+    cache.set('b', '2');
+    cache.set('c', '3');
+    assert.strictEqual(cache.get('a'), undefined, 'a should be evicted');
+    assert.ok(cache.get('b') || cache.get('c'), 'b or c should survive');
+  });
+
   test('MultilineClassifier should detect triggers', () => {
     const classifier = new MultilineClassifier();
     assert.ok(classifier.shouldSuggestMultiline('if x > 0:'));
@@ -81,5 +106,15 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.ok(classifier.shouldSuggestMultiline('x = {'));
     assert.ok(!classifier.shouldSuggestMultiline('const x = 5'));
     assert.ok(!classifier.shouldSuggestMultiline(''));
+    assert.ok(classifier.shouldSuggestMultiline('try:'));
+    assert.ok(classifier.shouldSuggestMultiline('except Exception as e:'));
+    assert.ok(classifier.shouldSuggestMultiline('for item in items:'));
+  });
+
+  test('MultilineClassifier should trigger on previous line', () => {
+    const classifier = new MultilineClassifier();
+    assert.ok(classifier.shouldSuggestMultiline('if x:\n'));
+    assert.ok(classifier.shouldSuggestMultiline('def foo():\n'));
+    assert.ok(!classifier.shouldSuggestMultiline('\n'));
   });
 });

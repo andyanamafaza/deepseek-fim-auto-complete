@@ -6,28 +6,33 @@ export const STOP_TOKENS = [
 interface LanguageInfo {
   comment: string;
   stopTokens: string[];
+  defaultMaxTokens: number;
 }
 
 export const LANGUAGE_MAP: Record<string, LanguageInfo> = {
-  javascript: { comment: '//', stopTokens: ['\nfunction ', '\nconst ', '\nlet ', '\nvar ', '\nimport ', '\nexport ', '\nclass ', '\ninterface '] },
-  typescript: { comment: '//', stopTokens: ['\nfunction ', '\nconst ', '\nlet ', '\nvar ', '\nimport ', '\nexport ', '\nclass ', '\ninterface ', '\ntype ', '\nenum '] },
-  typescriptreact: { comment: '//', stopTokens: ['\nfunction ', '\nconst ', '\nimport ', '\nexport ', '\nclass ', '\ninterface '] },
-  javascriptreact: { comment: '//', stopTokens: ['\nfunction ', '\nconst ', '\nimport ', '\nexport ', '\nclass '] },
-  python: { comment: '#', stopTokens: ['\nclass ', '\ndef ', '\n# ', '\nimport ', '\nfrom ', '\n@', '\n"""'] },
-  go: { comment: '//', stopTokens: ['\nfunc ', '\npackage ', '\nimport ', '\ntype ', '\nconst ', '\nvar ', '\nif ', '\nfor '] },
-  rust: { comment: '//', stopTokens: ['\nfn ', '\nstruct ', '\nenum ', '\nimpl ', '\nuse ', '\nmod ', '\npub ', '\nlet ', '\nmut '] },
-  java: { comment: '//', stopTokens: ['\npublic ', '\nprivate ', '\nprotected ', '\nclass ', '\ninterface ', '\nimport ', '\nvoid ', '\nint ', '\nString ', '@'] },
-  c: { comment: '//', stopTokens: ['\n#include ', '\n#define ', '\nint ', '\nvoid ', '\nchar ', '\nstruct ', '\nif ', '\nfor ', '\nwhile '] },
-  cpp: { comment: '//', stopTokens: ['\n#include ', '\n#define ', '\nint ', '\nvoid ', '\nchar ', '\nstruct ', '\nclass ', '\npublic:', '\nprivate:', '\ntemplate '] },
-  csharp: { comment: '//', stopTokens: ['\npublic ', '\nprivate ', '\nprotected ', '\nclass ', '\ninterface ', '\nnamespace ', '\nusing ', '\nvoid ', '\nint ', '\nstring ', '\nvar '] },
-  ruby: { comment: '#', stopTokens: ['\ndef ', '\nclass ', '\nmodule ', '\nrequire ', '\nif ', '\nunless ', '\nend'] },
-  php: { comment: '//', stopTokens: ['\nfunction ', '\nclass ', '\nnamespace ', '\nuse ', '\npublic ', '\nprivate ', '\nprotected ', '\nif ', '\nforeach '] },
-  swift: { comment: '//', stopTokens: ['\nfunc ', '\nclass ', '\nstruct ', '\nenum ', '\nimport ', '\nvar ', '\nlet ', '\nif '] },
-  kotlin: { comment: '//', stopTokens: ['\nfun ', '\nclass ', '\nobject ', '\nimport ', '\nval ', '\nvar ', '\nif ', '\nwhen '] },
-  scala: { comment: '//', stopTokens: ['\ndef ', '\nclass ', '\nobject ', '\ntrait ', '\nimport ', '\nval ', '\nvar ', '\nif '] },
-  lua: { comment: '--', stopTokens: ['\nfunction ', '\nlocal ', '\nif ', '\nfor ', '\nwhile ', '\nend'] },
-  sql: { comment: '--', stopTokens: ['\nSELECT ', '\nFROM ', '\nWHERE ', '\nINSERT ', '\nUPDATE ', '\nDELETE ', '\nCREATE ', '\nALTER '] },
+  javascript:     { comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass ', '\ninterface '] },
+  typescript:     { comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass ', '\ninterface ', '\ntype ', '\nenum '] },
+  typescriptreact:{ comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass ', '\ninterface '] },
+  javascriptreact:{ comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass '] },
+  python:         { comment: '#', defaultMaxTokens: 1024, stopTokens: ['\nclass ', '\ndef ', '\nimport ', '\nfrom ', '\n"""'] },
+  go:             { comment: '//', defaultMaxTokens: 384,  stopTokens: ['\nfunc ', '\npackage ', '\nimport ', '\ntype '] },
+  rust:           { comment: '//', defaultMaxTokens: 384,  stopTokens: ['\nfn ', '\nstruct ', '\nenum ', '\nimpl ', '\nuse ', '\nmod ', '\npub '] },
+  java:           { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\npublic ', '\nprivate ', '\nprotected ', '\nclass ', '\ninterface ', '\nimport '] },
+  c:              { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\n#include ', '\n#define ', '\nstruct '] },
+  cpp:            { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\n#include ', '\n#define ', '\nclass ', '\ntemplate '] },
+  csharp:         { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\npublic ', '\nprivate ', '\nprotected ', '\nclass ', '\ninterface ', '\nnamespace ', '\nusing '] },
+  ruby:           { comment: '#', defaultMaxTokens: 768,  stopTokens: ['\ndef ', '\nclass ', '\nmodule ', '\nrequire ', '\nend'] },
+  php:            { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\nfunction ', '\nclass ', '\nnamespace ', '\nuse '] },
+  swift:          { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\nfunc ', '\nclass ', '\nstruct ', '\nenum ', '\nimport '] },
+  kotlin:         { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\nfun ', '\nclass ', '\nobject ', '\nimport '] },
+  scala:          { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\ndef ', '\nclass ', '\nobject ', '\ntrait ', '\nimport '] },
+  lua:            { comment: '--', defaultMaxTokens: 512,  stopTokens: ['\nfunction ', '\nlocal '] },
+  sql:            { comment: '--', defaultMaxTokens: 256,  stopTokens: ['\nSELECT ', '\nFROM ', '\nWHERE ', '\nINSERT ', '\nUPDATE ', '\nDELETE ', '\nCREATE ', '\nALTER '] },
 };
+
+export function getLanguageDefaultMaxTokens(languageId: string): number {
+  return LANGUAGE_MAP[languageId]?.defaultMaxTokens || 256;
+}
 
 export function getStopTokensForLanguage(languageId: string): string[] {
   const tokens: string[] = [...STOP_TOKENS];
@@ -44,8 +49,22 @@ export function isWhitespaceOrEmpty(text: string): boolean {
 
 export function isRepetitive(text: string): boolean {
   if (text.length < 10) return false;
-  const lines = text.trim().split('\n');
-  if (lines.length < 3) return false;
-  const uniqueLines = new Set(lines.map(l => l.trim()));
-  return uniqueLines.size <= 1;
+  const trimmed = text.trim();
+  const lines = trimmed.split('\n');
+
+  if (lines.length >= 3) {
+    const uniqueLines = new Set(lines.map(l => l.trim()));
+    if (uniqueLines.size <= 1) return true;
+  }
+
+  const repeatPattern = /(.+?)\1{4,}/;
+  if (repeatPattern.test(trimmed.replace(/\s/g, ''))) return true;
+
+  const structureLines = lines.filter(l => l.trim().length > 0).map(l => l.trim().replace(/[a-zA-Z_$]\w*/g, 'x').replace(/[0-9]+/g, '0'));
+  if (structureLines.length >= 3) {
+    const uniqueStructures = new Set(structureLines);
+    if (uniqueStructures.size <= 1) return true;
+  }
+
+  return false;
 }
