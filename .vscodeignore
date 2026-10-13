@@ -1,9 +1,32 @@
-.vscode/**
-.vscode-test/**
+# Sources & build config (the runtime bundle ships as out/extension.js)
 src/**
-node_modules/**
-.gitignore
-tsconfig.json
 **/*.ts
 **/*.ts.map
 **/*.d.ts
+out/test/**
+tsconfig.json
+esbuild.js
+package-lock.json
+.eslintrc.json
+
+# Tooling, editors, agent + graph artifacts
+.vscode/**
+.vscode-test/**
+.github/**
+.agents/**
+.claude/**
+.opencode/**
+graphify-out/**
+raw/**
+node_modules/**
+
+# Repo clutter
+.gitignore
+AGENTS.md
+skills-lock.json
+random
+*.vsix
+*.pdf
+**/*.png
+!icon.png
+icon.svg

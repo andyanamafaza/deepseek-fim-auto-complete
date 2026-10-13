@@ -1,5 +1,28 @@
+# Build output
 out/
-node_modules/
-.vscode-test
-*.vsix
 *.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Generated files
+graphify-out/
+
+# VS Code
+.vscode-test/
+
+# Local AI tools
+.opencode/
+
+# Packaged extension
+*.vsix
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agents
+.agents
+.claude
+AGENTS.md
+random
