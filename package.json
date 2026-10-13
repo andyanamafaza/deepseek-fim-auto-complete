@@ -2,7 +2,7 @@
   "name": "deepseek-fim-auto-complete",
   "displayName": "DeepSeek Autocomplete",
   "description": "AI-powered code completions using DeepSeek Fill-in-the-Middle API. Context-aware inline suggestions with cross-file context, git diff awareness, TF-IDF similar code matching, diagnostics, adaptive streaming, true LRU cache, gzip, and multi-line support for 16+ languages.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "andyanamafaza",
   "license": "MIT",
   "icon": "icon.png",
