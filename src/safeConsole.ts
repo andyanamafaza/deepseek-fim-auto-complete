@@ -10,24 +10,6 @@ function markBroken(): void {
   }, 10000);
 }
 
-export function safeWarn(...args: unknown[]): void {
-  if (consoleBroken) return;
-  try {
-    console.warn(...args);
-  } catch {
-    markBroken();
-  }
-}
-
-export function safeError(...args: unknown[]): void {
-  if (consoleBroken) return;
-  try {
-    console.error(...args);
-  } catch {
-    markBroken();
-  }
-}
-
 export function safeLog(...args: unknown[]): void {
   if (consoleBroken) return;
   try {

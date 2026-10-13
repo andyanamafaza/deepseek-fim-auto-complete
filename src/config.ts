@@ -28,10 +28,6 @@ export class Config {
     return this.apiKeyCached;
   }
 
-  invalidateApiKeyCache(): void {
-    this.apiKeyCached = undefined;
-  }
-
   async setApiKey(key: string): Promise<void> {
     this.apiKeyCached = key || '';
     if (key) {
@@ -95,6 +91,14 @@ export class Config {
 
   get multilineCompletions(): string {
     return this.get<string>('multilineCompletions', 'auto');
+  }
+
+  get streaming(): boolean {
+    return this.get<boolean>('streaming', false);
+  }
+
+  get contextEnrichment(): boolean {
+    return this.get<boolean>('contextEnrichment', false);
   }
 
   get streamingTimeout(): number {

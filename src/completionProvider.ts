@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { exec } from 'child_process';
 import { Config } from './config';
 import { StatusBarManager } from './statusBar';
 import { Debouncer } from './debouncer';
@@ -9,7 +10,7 @@ import { MultilineClassifier } from './multilineClassifier';
 import { SensitiveFileFilter } from './sensitiveFileFilter';
 import { DebugChannel } from './debugChannel';
 import { StatsTracker } from './statsTracker';
-import { isWhitespaceOrEmpty, isRepetitive, getStopTokensForLanguage, getLanguageDefaultMaxTokens, LANGUAGE_MAP } from './utils';
+import { isWhitespaceOrEmpty, isRepetitive, LANGUAGE_MAP } from './utils';
 import { extractContext } from './contextExtractor';
 import { collectMultiFileContext } from './multiFileContext';
 import { findSimilarCode } from './semanticContext';
@@ -23,7 +24,10 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
   private apiKeyWarningShown = false;
 
   private activeSuggestion: { prefix: string; fullText: string; overlapChars: number; documentUri: string; documentVersion: number } | null = null;
-  private lastFimContext: { prefix: string; suffix: string; languageId: string; filePath: string } | null = null;
+  private acceptedAt = 0;
+  private readonly ACCEPT_GUARD_MS = 400;
+  private lastFailureNotify = 0;
+  private lastMultiline = false;
   private alternativesCache: Array<{ text: string; temperature: number }> = [];
   private gitDiffCache = new Map<string, { result: string; timestamp: number }>();
   private readonly GIT_DIFF_TTL = 30_000;
@@ -36,7 +40,6 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     docVersion: number;
     contextHeader: string;
     computedAt: number;
-    cursorLine: number;
   } | null = null;
 
   constructor(
@@ -47,7 +50,7 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     private stats?: StatsTracker,
   ) {
     this.cache = new CompletionCache(config.cacheSize);
-    this.client = new DeepSeekClient();
+    this.client = new DeepSeekClient((message) => this.debug?.log(message));
   }
 
   async provideInlineCompletionItems(
@@ -60,8 +63,12 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
     if (this.sensitiveFilter?.shouldSkip(document)) {
       this.debug?.log(`Skipped sensitive file: ${document.uri.fsPath}`);
+      this.statusBar?.setNotice('Completions are off for this file (sensitive file or deepseekFim.disableInFiles).');
       return undefined;
     }
+
+    // Suppress re-triggering right after the user accepted a suggestion.
+    if (Date.now() - this.acceptedAt < this.ACCEPT_GUARD_MS) return undefined;
 
     const result = this.tryAdaptiveGhostText(document, position);
     if (result) return result;
@@ -93,14 +100,12 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
     const cacheHit = this.cache.lookup(rawPrefix);
     if (cacheHit && !isWhitespaceOrEmpty(cacheHit.remaining)) {
-      const range = this.getCompletionRange(document, position, cacheHit.remaining);
       this.debug?.log(`Cache hit: "${cacheHit.remaining.slice(0, 40)}..."`);
       this.stats?.trackShown(cacheHit.remaining);
-      const overlapChars = range.start.character < range.end.character ? range.end.character - range.start.character : 0;
-      this.activeSuggestion = { prefix: rawPrefix, fullText: cacheHit.remaining, overlapChars, documentUri: document.uri.toString(), documentVersion: document.version };
+      this.activeSuggestion = { prefix: rawPrefix, fullText: cacheHit.remaining, overlapChars: 0, documentUri: document.uri.toString(), documentVersion: document.version };
       const tokenEstimate = Math.ceil(cacheHit.remaining.length / 4);
       this.statusBar?.setSuggestionInfo(tokenEstimate, 1);
-      return [this.createInlineItem(cacheHit.remaining, range)];
+      return [this.makeInlineItem(document, position, cacheHit.remaining)];
     }
 
     const fimContext = this.promptBuilder.build(
@@ -114,11 +119,9 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
     if (isWhitespaceOrEmpty(fimContext.prefix)) return undefined;
 
-    this.statusBar?.setLoading(true);
+    this.statusBar?.setLoading(true, this.wantMultiline(fimContext.prefix));
 
     try {
-      this.lastFimContext = { prefix: fimContext.prefix, suffix: fimContext.suffix, languageId: document.languageId, filePath: document.uri.fsPath };
-
       const builtPrompt = await this.buildPrompt(
         fimContext.prefix, fimContext.suffix, document.languageId,
         document.uri.fsPath, document, position
@@ -135,14 +138,12 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       this.stats?.trackShown(text);
       this.alternativesCache = [{ text, temperature: this.config.temperature }].slice(-this.MAX_ALTERNATIVES);
 
-      const range = this.getCompletionRange(document, position, text);
-      const overlapChars = range.start.character < range.end.character ? range.end.character - range.start.character : 0;
-      this.activeSuggestion = { prefix: rawPrefix, fullText: text, overlapChars, documentUri: document.uri.toString(), documentVersion: document.version };
+      this.activeSuggestion = { prefix: rawPrefix, fullText: text, overlapChars: 0, documentUri: document.uri.toString(), documentVersion: document.version };
 
       const tokenEstimate = Math.ceil(text.length / 4);
-      this.statusBar?.setSuggestionInfo(tokenEstimate, 1);
+      this.statusBar?.setSuggestionInfo(tokenEstimate, 1, this.lastMultiline);
 
-      return [this.createInlineItem(text, range)];
+      return [this.makeInlineItem(document, position, text)];
     } finally {
       this.statusBar?.setLoading(false);
     }
@@ -150,6 +151,11 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
   private requestCount = 0;
   private lastRequestTime = 0;
+
+  private wantMultiline(prefix: string): boolean {
+    return this.config.multilineCompletions === 'always' ||
+      (this.config.multilineCompletions === 'auto' && this.multilineClassifier.shouldSuggestMultiline(prefix));
+  }
 
   private getAdaptiveStreamingTimeout(): number {
     const base = this.config.streamingTimeout;
@@ -198,11 +204,10 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     }
 
     this.activeSuggestion = { ...this.activeSuggestion, prefix: rawPrefix, fullText: remaining, overlapChars: 0 };
-    const range = new vscode.Range(position, position);
     this.debug?.log(`Adaptive ghost text: "${remaining.slice(0, 40)}..."`);
     const tokenEstimate = Math.ceil(remaining.length / 4);
     this.statusBar?.setSuggestionInfo(tokenEstimate, this.alternativesCache.length || 1);
-    return [this.createInlineItem(remaining, range)];
+    return [this.makeInlineItem(document, position, remaining)];
   }
 
   private async generateMultiCompletions(
@@ -266,12 +271,10 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
     if (isWhitespaceOrEmpty(fimContext.prefix)) return undefined;
 
-    this.statusBar?.setLoading(true);
+    this.statusBar?.setLoading(true, this.wantMultiline(fimContext.prefix));
     this.debug?.log('Invoke: generating alternatives at different temperatures');
 
     try {
-      this.lastFimContext = { prefix: fimContext.prefix, suffix: fimContext.suffix, languageId: document.languageId, filePath: document.uri.fsPath };
-
       const builtPrompt = await this.buildPrompt(
         fimContext.prefix, fimContext.suffix, document.languageId,
         document.uri.fsPath, document, position
@@ -291,10 +294,7 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
       this.alternativesCache = results.slice().slice(-this.MAX_ALTERNATIVES);
 
-      const items = results.map((r) => {
-        const range = this.getCompletionRange(document, position, r.text);
-        return this.createInlineItem(r.text, range);
-      });
+      const items = results.map((r) => this.makeInlineItem(document, position, r.text));
 
       this.debug?.log(`Invoke: returning ${items.length} alternatives`);
       return items;
@@ -310,8 +310,10 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       ? `${langComment} File: ${fileName}\n${langComment} Language: ${languageId}\n\n`
       : '';
 
+    const enrich = this.config.contextEnrichment;
     const docId = document ? `${document.uri.toString()}:${document.version}` : '';
-    const cacheValid = this.contextCache
+    const cacheValid = enrich
+      && this.contextCache
       && docId
       && this.contextCache.docUri === document?.uri.toString()
       && this.contextCache.docVersion === document?.version
@@ -319,7 +321,7 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
 
     if (cacheValid) {
       contextHeader = this.contextCache!.contextHeader;
-    } else if (document && position) {
+    } else if (enrich && document && position) {
       const enrichmentTasks: Promise<string | undefined>[] = [];
 
       const extractPromise = extractContext(document, position);
@@ -362,7 +364,9 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
                   `${langComment} Similar pattern:\n${langComment} ${block.replace(/\n/g, '\n' + langComment + ' ')}`
                 ).join('\n') + '\n\n';
               }
-            } catch {}
+            } catch {
+              // similar-code matching is best-effort
+            }
             return undefined;
           })()
         );
@@ -373,7 +377,9 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
               if (relatedContexts.length > 0) {
                 return relatedContexts.join('\n') + '\n\n';
               }
-            } catch {}
+            } catch {
+              // cross-file context is best-effort
+            }
             return undefined;
           })()
         );
@@ -389,7 +395,6 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
         docVersion: document.version,
         contextHeader,
         computedAt: Date.now(),
-        cursorLine: position.line,
       };
     }
 
@@ -447,7 +452,6 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     if (!relative) return undefined;
 
     try {
-      const { exec } = require('child_process') as typeof import('child_process');
       const result = await new Promise<string>((resolve, reject) => {
         exec(`git diff --unified=3 HEAD -- "${relative}"`, {
           cwd: repoRoot,
@@ -516,28 +520,16 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     prebuiltPrompt?: { prompt: string; suffix: string },
   ): Promise<string | undefined> {
     const temperature = temperatureOverride ?? this.config.temperature;
-    const needMultiline = this.config.multilineCompletions === 'always' ||
-      (this.config.multilineCompletions === 'auto' && this.multilineClassifier.shouldSuggestMultiline(prefix));
+    const needMultiline = this.wantMultiline(prefix);
+    this.lastMultiline = needMultiline;
 
-    let effectiveModel = this.config.model;
-    if (effectiveModel === 'deepseek-v4-flash' && needMultiline && !temperatureOverride) {
-      const prefixLen = prefix.trim().length;
-      const isComplex = prefixLen > 100 && /\b(class|def|function|interface|trait|impl|struct)\b/.test(prefix);
-      if (isComplex) {
-        effectiveModel = 'deepseek-v4-pro';
-        this.debug?.log('Auto-switched to v4-pro for complex multiline context');
-      }
-    }
+    const effectiveModel = this.config.model;
 
     const userStops = this.config.stopSequences || [];
+    const stop = [...new Set(['\n\n\n', ...userStops])];
 
-    const langStops = needMultiline ? [] : getStopTokensForLanguage(languageId);
-    const stop = [...langStops, ...userStops, ...(needMultiline ? ['\n\n\n\n'] : ['\n\n\n', '\r\n\r\n\r\n'])];
-
-    const langDefaultMax = getLanguageDefaultMaxTokens(languageId);
     const userMax = this.config.maxTokens;
-    const multilineMin = needMultiline ? 1024 : 0;
-    const effectiveMaxTokens = Math.max(userMax, langDefaultMax, multilineMin);
+    const effectiveMaxTokens = needMultiline ? Math.max(userMax, 1024) : userMax;
 
     const { prompt, suffix: suf } = prebuiltPrompt ?? await this.buildPrompt(prefix, suffix, languageId, filePath, document, position);
 
@@ -554,45 +546,53 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
       stop,
     };
 
-    this.debug?.log(`Streaming: prefix=${prompt.length}ch, suffix=${suf.length}ch, temp=${temperature}, model=${req.model}, multiline=${needMultiline}`);
+    this.debug?.log(`Request (${this.config.streaming ? 'stream' : 'single'}): prefix=${prompt.length}ch, suffix=${suf.length}ch, temp=${temperature}, model=${req.model}, multiline=${needMultiline}`);
 
-    const stream = this.client.streamComplete(req, token);
     let text = '';
     let hasContent = false;
     let wasCancelled = false;
-    const streamingTimeout = !needMultiline ? this.getAdaptiveStreamingTimeout() : 0;
-
     const startTime = Date.now();
+    const streamingTimeout = this.config.streaming && !needMultiline ? this.getAdaptiveStreamingTimeout() : 0;
 
-    try {
-      for await (const chunk of stream) {
-        if (token.isCancellationRequested) {
-          wasCancelled = true;
-          break;
+    if (this.config.streaming) {
+      const stream = this.client.streamComplete(req, token);
+      try {
+        for await (const chunk of stream) {
+          if (token.isCancellationRequested) {
+            wasCancelled = true;
+            break;
+          }
+
+          text += chunk;
+          if (chunk.trim().length > 0) hasContent = true;
+
+          if (!needMultiline && this.hasCompleteStatement(text)) {
+            break;
+          }
+
+          if (streamingTimeout > 0 && Date.now() - startTime > streamingTimeout) {
+            this.debug?.log('Streaming timeout reached, showing partial result');
+            break;
+          }
         }
-
-        text += chunk;
-        if (chunk.trim().length > 0) hasContent = true;
-
-        if (!needMultiline && this.hasCompleteStatement(text)) {
-          break;
-        }
-
-        if (streamingTimeout > 0 && Date.now() - startTime > streamingTimeout) {
-          this.debug?.log('Streaming timeout reached, showing partial result');
-          break;
-        }
+      } catch (err) {
+        this.debug?.log(`Stream error after ${text.length} chars: ${err}`);
       }
-    } catch (err) {
-      this.debug?.log(`Stream error after ${text.length} chars: ${err}`);
-      if (!hasContent) return undefined;
+    } else {
+      const res = await this.client.complete(req, token);
+      if (res?.text) {
+        text = res.text;
+        hasContent = text.trim().length > 0;
+      }
     }
 
     this.requestCount++;
     this.lastRequestTime = Date.now();
 
-    if ((!text || !hasContent) && !wasCancelled) return undefined;
-    if (!hasContent && wasCancelled) return undefined;
+    if (!hasContent) {
+      if (!wasCancelled && !token.isCancellationRequested) this.reportRequestFailure();
+      return undefined;
+    }
 
     const partial = wasCancelled || (streamingTimeout > 0 && Date.now() - startTime > streamingTimeout);
 
@@ -664,49 +664,87 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     return new vscode.InlineCompletionItem(text, range);
   }
 
-  private getCompletionRange(
+  /**
+   * Build an inline item that replaces from the cursor to the end of the current
+   * line with `completionText` followed by the existing line tail. VS Code diffs
+   * the replaced range against the inserted text and renders only the new part as
+   * ghost text, so a Fill-in-the-Middle response that echoes the suffix no longer
+   * duplicates or deletes code when accepted.
+   */
+  private makeInlineItem(
     document: vscode.TextDocument,
     position: vscode.Position,
-    completionText: string
-  ): vscode.Range {
-    const currentLine = document.lineAt(position.line).text;
-    const beforeCursor = currentLine.slice(
-      Math.max(0, position.character - 120),
-      position.character
-    );
+    completionText: string,
+  ): vscode.InlineCompletionItem {
+    const lineEnd = document.lineAt(position.line).range.end;
+    const range = new vscode.Range(position, lineEnd);
+    const lineTail = document.getText(range);
 
-    for (let len = beforeCursor.length; len > 0; len--) {
-      const partial = beforeCursor.slice(-len);
-      if (completionText.startsWith(partial)) {
-        return new vscode.Range(
-          position.line,
-          position.character - len,
-          position.line,
-          position.character
-        );
-      }
+    const insertText = lineTail.length > 0 && !completionText.endsWith(lineTail)
+      ? completionText + lineTail
+      : completionText;
+
+    const item = this.createInlineItem(insertText, range);
+    // Executed by VS Code after the item is accepted — the reliable accept signal.
+    item.command = { command: 'deepseekFim._accepted', title: '' };
+    this.statusBar?.setNotice(undefined);
+    return item;
+  }
+
+  markAccepted(): void {
+    this.acceptedAt = Date.now();
+  }
+
+  private reportRequestFailure(): void {
+    const err = this.client.lastError;
+    if (!err) {
+      // A successful response that yielded nothing usable is not an error.
+      this.debug?.log('Request returned no usable completion.');
+      return;
     }
 
-    if (completionText.includes('\n')) {
-      const firstLine = completionText.split('\n')[0].trim();
-      if (firstLine && beforeCursor.trimEnd().endsWith(firstLine)) {
-        return new vscode.Range(
-          position.line,
-          Math.max(0, position.character - firstLine.length),
-          position.line,
-          position.character
-        );
-      }
-    }
+    const failure = this.describeFailure(err);
+    this.debug?.log(`Request failed: ${failure.message}`);
 
-    return new vscode.Range(position, position);
+    // Notify at most once a minute so a burst of keystrokes can't spam the user.
+    const now = Date.now();
+    if (now - this.lastFailureNotify < 60_000) return;
+    this.lastFailureNotify = now;
+
+    vscode.window
+      .showErrorMessage(`DeepSeek Autocomplete: ${failure.message}`, ...failure.actions)
+      .then((choice) => {
+        if (choice === 'Open Log') this.debug?.show();
+        else if (choice === 'Set API Key') vscode.commands.executeCommand('deepseekFim.setApiKey');
+      });
+  }
+
+  private describeFailure(err: string): { message: string; actions: string[] } {
+    const e = (err || '').toLowerCase();
+    if (e.includes('401') || e.includes('invalid api key') || e.includes('authentication')) {
+      return { message: 'invalid API key. Set a valid key to enable completions.', actions: ['Set API Key', 'Open Log'] };
+    }
+    if (e.includes('402') || e.includes('insufficient') || e.includes('balance') || e.includes('quota')) {
+      return { message: 'account is out of credits.', actions: ['Open Log'] };
+    }
+    if (e.includes('429')) {
+      return { message: 'rate limited by DeepSeek. Try again shortly.', actions: ['Open Log'] };
+    }
+    if (e.includes('etimedout') || e.includes('timeout') || e.includes('aborted')) {
+      return { message: 'request timed out. Raise "deepseekFim.timeoutMs" for long completions.', actions: ['Open Log'] };
+    }
+    if (e.includes('enotfound') || e.includes('econnreset') || e.includes('could not reach')) {
+      return { message: 'could not reach the DeepSeek API. Check your network.', actions: ['Open Log'] };
+    }
+    const short = err.length > 120 ? `${err.slice(0, 120)}…` : err;
+    return { message: `request failed (${short}).`, actions: ['Open Log'] };
   }
 
   get currentAlternatives(): { text: string; temperature: number }[] {
     return this.alternativesCache;
   }
 
-  prefetchNextCompletion(acceptedText: string): void {
+  prefetchNextCompletion(): void {
     if (this.prefetchTimeout) {
       clearTimeout(this.prefetchTimeout);
       this.prefetchTimeout = null;
@@ -763,7 +801,6 @@ export class CompletionProvider implements vscode.InlineCompletionItemProvider {
     this.debouncer.cancel();
     this.activeSuggestion = null;
     this.alternativesCache = [];
-    this.lastFimContext = null;
     this.gitDiffCache.clear();
     if (this.prefetchTimeout) {
       clearTimeout(this.prefetchTimeout);

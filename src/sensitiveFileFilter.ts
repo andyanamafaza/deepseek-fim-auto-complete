@@ -1,18 +1,29 @@
 import * as vscode from 'vscode';
 
-const SENSITIVE_PATTERNS = [
-  /\.env$/i,
-  /\.env\./i,
-  /secret/i,
-  /credential/i,
-  /password/i,
-  /\.pem$/i,
-  /\.key$/i,
-  /id_rsa/i,
-  /\.gitconfig/i,
-  /\.netrc/i,
-  /\.aws[\\/]/i,
-  /[\\/]\.?config\.json$/i,
+/**
+ * Matched against the file *name* only (not the full path), so files like
+ * `passwordValidator.ts` or `secrets-manager.ts` are no longer skipped.
+ */
+const SENSITIVE_BASENAME_PATTERNS: RegExp[] = [
+  /^\.env(\..+)?$/i,                 // .env, .env.local, .env.production
+  /^\.npmrc$/i,
+  /^\.netrc$/i,
+  /^\.git-credentials$/i,
+  /^\.gitconfig$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i,
+  /\.(pem|key|pfx|p12|keystore|jks)$/i,
+  /^credentials\.json$/i,
+  /^service-account.*\.json$/i,
+  /^secrets?\.(json|ya?ml|toml|ini|env)$/i,
+];
+
+/**
+ * Matched against the normalized full path for well-known secret directories.
+ */
+const SENSITIVE_PATH_SEGMENTS: RegExp[] = [
+  /\/\.aws\//i,
+  /\/\.ssh\//i,
+  /\/\.gnupg\//i,
 ];
 
 export class SensitiveFileFilter {
@@ -20,8 +31,13 @@ export class SensitiveFileFilter {
     const filePath = document.uri.fsPath;
     // Normalize backslashes to forward slashes for cross-platform pattern matching
     const normalizedPath = filePath.replace(/\\/g, '/');
+    const basename = normalizedPath.split('/').pop() || '';
 
-    if (SENSITIVE_PATTERNS.some((p) => p.test(normalizedPath))) {
+    if (SENSITIVE_BASENAME_PATTERNS.some((p) => p.test(basename))) {
+      return true;
+    }
+
+    if (SENSITIVE_PATH_SEGMENTS.some((p) => p.test(normalizedPath))) {
       return true;
     }
 

@@ -7,6 +7,51 @@ interface RelatedFile {
   snippets: string[];
 }
 
+const MAX_FILE_BYTES = 20000;
+
+const KEY_LINE_RE = /^\s*(export|function|class|def|fn|pub\s+fn|interface|trait|struct|enum)\s/;
+const IMPORT_LINE_RE = /^\s*(import|from|const\s+\w+\s*=\s*require|use\s+|require\s+)/;
+
+async function readFileContent(uri: vscode.Uri): Promise<string> {
+  const raw = await vscode.workspace.fs.readFile(uri);
+  return raw.length > MAX_FILE_BYTES ? raw.slice(0, MAX_FILE_BYTES).toString() : raw.toString();
+}
+
+function analyzeFileContent(
+  content: string,
+  currentImports: string[]
+): { relevance: number; snippets: string[]; importCount: number } {
+  const lines = content.split('\n');
+  const snippets: string[] = [];
+  let relevance = 0;
+
+  const importCount = lines.filter((l: string) => IMPORT_LINE_RE.test(l)).length;
+
+  for (const imp of currentImports) {
+    if (content.includes(imp)) {
+      relevance += 3;
+      const matchLine = lines.findIndex((l: string) => l.includes(imp));
+      if (matchLine >= 0) {
+        const snippet = lines.slice(Math.max(0, matchLine - 1), matchLine + 4).join('\n').trim();
+        if (snippet) snippets.push(snippet.substring(0, 300));
+      }
+    }
+  }
+
+  if (snippets.length === 0 && content.length > 0) {
+    const keyLines = lines
+      .map((l: string, i: number) => ({ text: l, idx: i }))
+      .filter((l: { text: string }) => KEY_LINE_RE.test(l.text))
+      .slice(0, 3);
+    for (const kl of keyLines) {
+      const snippet = lines.slice(kl.idx, Math.min(kl.idx + 5, lines.length)).join('\n').trim();
+      if (snippet) snippets.push(snippet.substring(0, 300));
+    }
+  }
+
+  return { relevance, snippets, importCount };
+}
+
 export async function collectMultiFileContext(
   document: vscode.TextDocument,
   position: vscode.Position
@@ -16,7 +61,7 @@ export async function collectMultiFileContext(
   const currentFileName = document.fileName.split(/[/\\]/).pop() || '';
   const currentImports = extractImportKeywords(document, position);
 
-  const related = await findRelatedOpenTabs(document, currentLang, currentFileName, currentImports);
+  const related = await findRelatedOpenTabs(document, currentFileName, currentImports);
   const workspaceFiles = await findRelatedWorkspaceFiles(document, currentLang, currentFileName, currentImports);
 
   const allRelated = [...related, ...workspaceFiles]
@@ -37,7 +82,6 @@ export async function collectMultiFileContext(
 
 async function findRelatedOpenTabs(
   document: vscode.TextDocument,
-  currentLang: string,
   currentFileName: string,
   currentImports: string[]
 ): Promise<RelatedFile[]> {
@@ -69,44 +113,17 @@ async function findRelatedOpenTabs(
     if (relevance === 0) continue;
 
     try {
-      const maxBytes = 20000;
-      const raw = await vscode.workspace.fs.readFile(uri);
-      const content = raw.length > maxBytes ? raw.slice(0, maxBytes).toString() : raw.toString();
-
-      const snippets: string[] = [];
-      const lines = content.split('\n');
-      const importCount = lines.filter((l: string) =>
-        /^\s*(import|from|const\s+\w+\s*=\s*require|use\s+|require\s+)/.test(l)
-      ).length;
+      const content = await readFileContent(uri);
+      const { relevance: importRel, snippets, importCount } = analyzeFileContent(content, currentImports);
 
       if (importCount > 0) relevance += Math.min(importCount, 5);
-
-      for (const imp of currentImports) {
-        if (content.includes(imp)) {
-          relevance += 3;
-          const matchLine = lines.findIndex((l: string) => l.includes(imp));
-          if (matchLine >= 0) {
-            const snippet = lines.slice(Math.max(0, matchLine - 1), matchLine + 4).join('\n').trim();
-            if (snippet) snippets.push(snippet.substring(0, 300));
-          }
-        }
-      }
-
-      if (snippets.length === 0 && content.length > 0) {
-        const keyLines = lines
-          .map((l: string, i: number) => ({ text: l, idx: i }))
-          .filter((l: { text: string }) => /^\s*(export|function|class|def|fn|pub\s+fn|interface|trait|struct|enum)\s/.test(l.text))
-          .slice(0, 3);
-        for (const kl of keyLines) {
-          const snippet = lines.slice(kl.idx, Math.min(kl.idx + 5, lines.length)).join('\n').trim();
-          if (snippet) snippets.push(snippet.substring(0, 300));
-        }
-      }
+      relevance += importRel;
 
       if (snippets.length > 0) {
         related.push({ uri, relevance, snippets });
       }
     } catch {
+      // skip unreadable tab
     }
   }
 
@@ -146,44 +163,20 @@ async function findRelatedWorkspaceFiles(
       if (uri.toString() === document.uri.toString()) continue;
 
       try {
-        const maxBytes = 20000;
-        const raw = await vscode.workspace.fs.readFile(uri);
-        const content = raw.length > maxBytes ? raw.slice(0, maxBytes).toString() : raw.toString();
-        const lines = content.split('\n');
-        const snippets: string[] = [];
-        let relevance = 0;
-
-        for (const imp of currentImports) {
-          if (content.includes(imp)) {
-            relevance += 3;
-            const matchLine = lines.findIndex((l: string) => l.includes(imp));
-            if (matchLine >= 0) {
-              const snippet = lines.slice(Math.max(0, matchLine - 1), matchLine + 4).join('\n').trim();
-              if (snippet) snippets.push(snippet.substring(0, 300));
-            }
-          }
-        }
+        const content = await readFileContent(uri);
+        const { relevance, snippets } = analyzeFileContent(content, currentImports);
 
         if (relevance > 0 || content.includes(currentFileName.replace(/\.[^.]+$/, ''))) {
-          if (snippets.length === 0) {
-            const keyLines = lines
-              .map((l: string, i: number) => ({ text: l, idx: i }))
-              .filter((l: { text: string }) => /^\s*(export|function|class|def|fn|pub\s+fn|interface|trait|struct|enum)\s/.test(l.text))
-              .slice(0, 3);
-            for (const kl of keyLines) {
-              const snippet = lines.slice(kl.idx, Math.min(kl.idx + 5, lines.length)).join('\n').trim();
-              if (snippet) snippets.push(snippet.substring(0, 300));
-            }
-          }
-
           if (snippets.length > 0) {
             related.push({ uri, relevance, snippets });
           }
         }
       } catch {
+        // skip unreadable workspace file
       }
     }
   } catch {
+    // workspace search unavailable
   }
 
   return related;

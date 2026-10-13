@@ -18,8 +18,9 @@ Open any supported file — suggestions appear as ghost text while you type.
 | **Tab** | Accept the ghost text |
 | **Escape** | Dismiss |
 | **Ctrl+Shift+.** | Toggle completions on/off |
-| **Ctrl+Right** | Accept word-by-word |
 | **Ctrl+Space** | Show multiple alternatives (when invoked) |
+
+Word-by-word acceptance is available via the `DeepSeek Autocomplete: Accept Next Word` command (unbound by default).
 
 ### 4. Customize
 Open settings (`Ctrl+,`) and search for `deepseekFim` to configure:

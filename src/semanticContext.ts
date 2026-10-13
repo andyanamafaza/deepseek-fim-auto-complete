@@ -105,7 +105,7 @@ function extractCodeBlocks(document: vscode.TextDocument): CodeBlock[] {
 export function extractKeywords(text: string): Set<string> {
   const keywords = new Set<string>();
 
-  const tokens = text.split(/[^a-zA-Z_$][^a-zA-Z0-9_$]*[a-zA-Z_$]|[^a-zA-Z_$]+/);
+  const tokens = text.split(/[^a-zA-Z0-9_$]+/);
 
   const skipWords = new Set([
     'the', 'this', 'that', 'and', 'or', 'for', 'with', 'from',
@@ -175,8 +175,4 @@ export function cosineSimilarity(
 
   if (queryMagnitude === 0 || docMagnitude === 0) return 0;
   return dotProduct / (Math.sqrt(queryMagnitude) * Math.sqrt(docMagnitude));
-}
-
-export function clearCache(): void {
-  codeBlockCache.clear();
 }

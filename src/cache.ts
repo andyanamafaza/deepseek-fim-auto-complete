@@ -54,85 +54,64 @@ export class CompletionCache {
   lookup(input: string): { completion: string; remaining: string } | undefined {
     const ni = this.normalizeKey(input);
 
-    const exactEntry = this.cache.get(ni);
-    if (exactEntry) {
-      if (!this.isValid(exactEntry)) {
-        this.cache.delete(ni);
-      } else {
-        this.touch(exactEntry);
-        this.cache.delete(ni);
-        this.cache.set(ni, exactEntry);
-        return { completion: exactEntry.value, remaining: '' };
-      }
-    }
-
-    let bestMatch: string | undefined;
-    let bestLength = 0;
-
+    // 1. Prefer the longest cached key that is a prefix of (or equal to) the
+    //    input: the user may have typed further into a prefix we already know.
+    let prefKey: string | undefined;
+    let prefLength = 2;
     for (const [nk, entry] of this.cache) {
       if (!this.isValid(entry)) {
         this.cache.delete(nk);
         continue;
       }
-
-      if (nk.startsWith(ni) && nk.length > bestLength) {
-        bestMatch = nk;
-        bestLength = nk.length;
+      if (nk.length > prefLength && ni.startsWith(nk)) {
+        prefKey = nk;
+        prefLength = nk.length;
       }
     }
-
-    if (bestMatch) {
-      const entry = this.cache.get(bestMatch)!;
+    if (prefKey) {
+      const entry = this.cache.get(prefKey)!;
       this.touch(entry);
-      this.cache.delete(bestMatch);
-      this.cache.set(bestMatch, entry);
-
-      const remaining = entry.value.slice(ni.length - bestLength);
-      if (remaining && entry.value.startsWith(ni.slice(bestLength))) {
-        return { completion: entry.value, remaining };
-      }
-      return { completion: entry.value, remaining };
+      this.cache.delete(prefKey);
+      this.cache.set(prefKey, entry);
+      // Drop the characters already typed past the cached prefix.
+      return { completion: entry.value, remaining: entry.value.slice(ni.length - prefKey.length) };
     }
 
+    // 2. Case-insensitive substring match.
+    let fuzzyKey: string | undefined;
+    let fuzzyLength = 0;
     for (const [nk, entry] of this.cache) {
       if (!this.isValid(entry)) continue;
-
-      if (ni.length > 5 && nk.toLowerCase().includes(ni.toLowerCase())) {
-        if (!bestMatch || nk.length > bestLength) {
-          bestMatch = nk;
-          bestLength = nk.length;
-        }
+      if (ni.length > 5 && nk.length > fuzzyLength && nk.toLowerCase().includes(ni.toLowerCase())) {
+        fuzzyKey = nk;
+        fuzzyLength = nk.length;
       }
     }
-
-    if (bestMatch) {
-      const entry = this.cache.get(bestMatch)!;
-      this.touch(entry);
-      this.cache.delete(bestMatch);
-      this.cache.set(bestMatch, entry);
-      return { completion: entry.value, remaining: entry.value };
+    if (fuzzyKey) {
+      return this.take(fuzzyKey);
     }
 
+    // 3. Subsequence match.
     for (const [nk, entry] of this.cache) {
       if (!this.isValid(entry)) continue;
-
-      if (ni.length >= 3 && this.isSubsequence(ni, nk)) {
-        if (!bestMatch || nk.length > bestLength) {
-          bestMatch = nk;
-          bestLength = nk.length;
-        }
-      } 
+      if (ni.length >= 3 && nk.length > fuzzyLength && this.isSubsequence(ni, nk)) {
+        fuzzyKey = nk;
+        fuzzyLength = nk.length;
+      }
     }
-
-    if (bestMatch) {
-      const entry = this.cache.get(bestMatch)!;
-      this.touch(entry);
-      this.cache.delete(bestMatch);
-      this.cache.set(bestMatch, entry);
-      return { completion: entry.value, remaining: entry.value };
+    if (fuzzyKey) {
+      return this.take(fuzzyKey);
     }
 
     return undefined;
+  }
+
+  private take(key: string): { completion: string; remaining: string } {
+    const entry = this.cache.get(key)!;
+    this.touch(entry);
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return { completion: entry.value, remaining: entry.value };
   }
 
   private isSubsequence(input: string, key: string): boolean {

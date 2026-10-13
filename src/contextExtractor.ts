@@ -25,6 +25,7 @@ export async function extractContext(
       return extractFromSymbols(symbols, document, position);
     }
   } catch {
+    // symbol provider unavailable - fall back to regex
   }
 
   return extractFromRegex(document, position);
@@ -102,6 +103,14 @@ function extractFullSignature(sym: vscode.DocumentSymbol, document: vscode.TextD
   return sig;
 }
 
+function parseArrowReturn(text: string, stopAt: string): string | undefined {
+  const arrow = text.indexOf('->');
+  if (arrow < 0) return undefined;
+  const after = text.slice(arrow + 2).trim();
+  const stop = after.indexOf(stopAt);
+  return (stop >= 0 ? after.slice(0, stop) : after).trim();
+}
+
 function extractReturnType(sym: vscode.DocumentSymbol, document: vscode.TextDocument): string {
   const startLine = sym.selectionRange.start.line;
   const endLine = sym.selectionRange.end.line;
@@ -109,12 +118,8 @@ function extractReturnType(sym: vscode.DocumentSymbol, document: vscode.TextDocu
     const text = document.lineAt(line).text;
     const langId = document.languageId;
     if (langId === 'python') {
-      const arrow = text.indexOf('->');
-      if (arrow >= 0) {
-        const after = text.slice(arrow + 2).trim();
-        const colon = after.indexOf(':');
-        return (colon >= 0 ? after.slice(0, colon) : after).trim();
-      }
+      const parsed = parseArrowReturn(text, ':');
+      if (parsed !== undefined) return parsed;
     } else if (langId === 'typescript' || langId === 'javascript' || langId.startsWith('typescript') || langId.startsWith('javascript')) {
       const colon = text.indexOf(':');
       if (colon >= 0) {
@@ -131,12 +136,8 @@ function extractReturnType(sym: vscode.DocumentSymbol, document: vscode.TextDocu
         }
       }
     } else if (langId === 'rust' || langId === 'go' || langId === 'kotlin') {
-      const arrow = text.indexOf('->');
-      if (arrow >= 0) {
-        const after = text.slice(arrow + 2).trim();
-        const brace = after.indexOf('{');
-        return (brace >= 0 ? after.slice(0, brace) : after).trim();
-      }
+      const parsed = parseArrowReturn(text, '{');
+      if (parsed !== undefined) return parsed;
     }
   }
   return '';
@@ -279,20 +280,10 @@ function extractReturnTypeFromLine(line: string, langId: string): string {
     }
   }
   if (langId === 'python') {
-    const arrow = line.indexOf('->');
-    if (arrow >= 0) {
-      const after = line.slice(arrow + 2).trim();
-      const colon = after.indexOf(':');
-      return (colon >= 0 ? after.slice(0, colon) : after).trim();
-    }
+    return parseArrowReturn(line, ':') ?? '';
   }
   if (langId === 'rust' || langId === 'go' || langId === 'kotlin') {
-    const arrow = line.indexOf('->');
-    if (arrow >= 0) {
-      const after = line.slice(arrow + 2).trim();
-      const brace = after.indexOf('{');
-      return (brace >= 0 ? after.slice(0, brace) : after).trim();
-    }
+    return parseArrowReturn(line, '{') ?? '';
   }
   return '';
 }

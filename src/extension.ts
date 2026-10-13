@@ -24,35 +24,29 @@ const MODELS = [
 
 export async function activate(context: vscode.ExtensionContext) {
   const config = new Config(context.secrets);
-  const isDebug = config.get<boolean>('debug', false);
 
-  debugChannel = new DebugChannel('DeepSeek Autocomplete', isDebug);
+  debugChannel = new DebugChannel('DeepSeek Autocomplete');
   statsTracker = new StatsTracker(
     context.globalState,
     () => config.model,
-    (rate) => {
-      const action = 'Try v4-pro';
-      vscode.window.showInformationMessage(
-        `Acceptance rate is ${rate}% with v4-flash. Switch to v4-pro for better quality?`,
-        action
-      ).then((a) => {
-        if (a === action) {
-          config.update('model', 'deepseek-v4-pro');
-          statusBar?.update();
-          debugChannel?.log('Auto-switched to v4-pro due to low acceptance rate');
-        }
-      });
-    },
   );
   statusBar = new StatusBarManager(config, statsTracker);
 
   const sensitiveFilter = new SensitiveFileFilter();
 
   provider = new CompletionProvider(config, statusBar, sensitiveFilter, debugChannel, statsTracker);
-  statsTracker.onAcceptance = (acceptedText) => provider?.prefetchNextCompletion(acceptedText);
+
+  // Attached to every inline item; VS Code runs it when the suggestion is accepted.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim._accepted', () => {
+      provider?.markAccepted();
+      statsTracker?.trackAccepted();
+      provider?.prefetchNextCompletion();
+    })
+  );
 
   providerDisposable = vscode.languages.registerInlineCompletionItemProvider(
-    { pattern: '**' },
+    { scheme: '*', pattern: '**' },
     provider
   );
   context.subscriptions.push(providerDisposable);
@@ -192,7 +186,7 @@ export async function activate(context: vscode.ExtensionContext) {
       await config.setApiKey(value);
       debugChannel?.log('API key saved. Validating...');
 
-      const client = new DeepSeekClient();
+      const client = new DeepSeekClient((message) => debugChannel?.log(message));
       const validation = await client.validateApiKey(value);
 
       if (!validation.valid) {
@@ -261,7 +255,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const client = new DeepSeekClient();
+      const client = new DeepSeekClient((message) => debugChannel?.log(message));
       const results: string[] = [];
       const models = ['deepseek-v4-flash', 'deepseek-v4-pro'];
 
@@ -310,43 +304,79 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.statusBarMenu', async () => {
+      const enabled = config.get<boolean>('enabled', true);
+      const hasKey = !!(await config.getApiKey());
+
+      const actions: Array<vscode.QuickPickItem & { run: string }> = [
+        { label: enabled ? '$(circle-slash) Disable completions' : '$(check) Enable completions', run: 'deepseekFim.toggle' },
+        { label: '$(key) Set API Key', run: 'deepseekFim.setApiKey' },
+        { label: '$(plug) Test Connection', run: 'deepseekFim.testConnection' },
+        { label: '$(symbol-class) Select Model', description: config.model, run: 'deepseekFim.selectModel' },
+        { label: '$(graph) Usage Statistics', run: 'deepseekFim.showStats' },
+        { label: '$(output) Show Log', run: 'deepseekFim.showLog' },
+      ];
+
+      const picked = await vscode.window.showQuickPick(actions, {
+        title: 'DeepSeek Autocomplete',
+        placeHolder: hasKey ? 'Choose an action' : 'No API key set — choose "Set API Key"',
+      });
+      if (picked) vscode.commands.executeCommand(picked.run);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('deepseekFim.testConnection', async () => {
+      const apiKey = await config.getApiKey();
+      if (!apiKey) {
+        const choice = await vscode.window.showWarningMessage('Set a DeepSeek API key first.', 'Set API Key');
+        if (choice === 'Set API Key') vscode.commands.executeCommand('deepseekFim.setApiKey');
+        return;
+      }
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Testing DeepSeek connection...' },
+        async () => {
+          const client = new DeepSeekClient((message) => debugChannel?.log(message));
+          const result = await client.validateApiKey(apiKey);
+          if (result.valid) {
+            vscode.window.showInformationMessage(`DeepSeek Autocomplete: ${result.message}`);
+          } else {
+            const choice = await vscode.window.showErrorMessage(`DeepSeek Autocomplete: ${result.message}`, 'Open Log');
+            if (choice === 'Open Log') debugChannel?.show();
+          }
+        }
+      );
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('deepseekFim.acceptNextWord', async () => {
       try {
-        const handled = await vscode.commands.executeCommand<boolean>('editorAction.inlineCompletion.acceptNextWord');
+        const handled = await vscode.commands.executeCommand<boolean>('editor.action.inlineSuggest.acceptNextWord');
         if (!handled) {
-          await vscode.commands.executeCommand('editor.action.inlineCompletion.accept');
+          await vscode.commands.executeCommand('editor.action.inlineSuggest.accept');
         }
       } catch {
-        await vscode.commands.executeCommand('editor.action.inlineCompletion.accept');
+        await vscode.commands.executeCommand('editor.action.inlineSuggest.accept');
       }
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('deepseekFim.nextSuggestion', () => {
-      vscode.commands.executeCommand('editorAction.inlineCompletion.showNextInlineCompletion');
+      vscode.commands.executeCommand('editor.action.inlineSuggest.showNext');
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('deepseekFim.previousSuggestion', () => {
-      vscode.commands.executeCommand('editorAction.inlineCompletion.showPreviousInlineCompletion');
+      vscode.commands.executeCommand('editor.action.inlineSuggest.showPrevious');
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('deepseekFim.acceptOnEnter', async () => {
-      const acceptOnEnter = vscode.workspace.getConfiguration('deepseekFim').get<boolean>('acceptOnEnter', false);
-      if (!acceptOnEnter) {
-        await vscode.commands.executeCommand('type', { source: 'keyboard', text: '\n' });
-        return;
-      }
-      await vscode.commands.executeCommand('editor.action.inlineCompletion.accept');
-    })
-  );
-
-  const hoverDisposable = vscode.languages.registerHoverProvider({ pattern: '**' }, {
-    provideHover(document, position) {
+  const hoverDisposable = vscode.languages.registerHoverProvider({ scheme: '*', pattern: '**' }, {
+    provideHover(_document, position) {
       if (!provider || !vscode.window.activeTextEditor) return undefined;
 
       const editor = vscode.window.activeTextEditor;
@@ -371,13 +401,15 @@ export async function activate(context: vscode.ExtensionContext) {
     context.globalState.update('deepseekFim.firstActivation', true);
     const apiKey = await config.getApiKey();
     if (!apiKey) {
-      const setup = await vscode.window.showInformationMessage(
+      // Do not await the notification: activation must never block on user input.
+      void vscode.window.showInformationMessage(
         'Welcome to DeepSeek Autocomplete! Set your API key to get started.',
         'Set API Key'
-      );
-      if (setup === 'Set API Key') {
-        vscode.commands.executeCommand('deepseekFim.setApiKey');
-      }
+      ).then((setup) => {
+        if (setup === 'Set API Key') {
+          vscode.commands.executeCommand('deepseekFim.setApiKey');
+        }
+      });
     }
   }
 

@@ -13,19 +13,17 @@ Context-aware inline suggestions for 16+ languages — works like Copilot, power
 - **Adaptive ghost text** — suggestion text shrinks in real-time as you type matching characters, avoiding unnecessary API calls
 - **Multi-line ghost text** — suggests full functions, blocks, and expressions, not just single lines
 - **FIM context-aware** — understands prefix (before cursor) and suffix (after cursor) for precise insertions
-- **Streaming** — tokens arrive as generated, no waiting for full response; gzip-compressed for speed
+- **Reliable by default** — a single non-streaming request (optional streaming via `deepseekFim.streaming`), line-tail ghost text that never duplicates or deletes code, and a 400 ms post-accept guard
 - **Smart multi-line detection** — auto-triggers after `def`, `class`, `if`, `{`, `:`, `(`, and when inside an existing block
 - **3 parallel suggestions** — see multiple completion alternatives; cycle with `Alt+]` / `Alt+[`
-- **Word-by-word acceptance** — `Ctrl+Right` accepts one word at a time
+- **Word-by-word acceptance** — `DeepSeek Autocomplete: Accept Next Word` accepts one word at a time (unbound by default so it doesn't shadow `Ctrl+Right` navigation — bind it in Keyboard Shortcuts if you want it)
 - **Multi-model support** — switch between `v4-flash` (fast) and `v4-pro` (quality) with one click
 - **True LRU cache** — recently accessed completions survive eviction; repeated patterns complete instantly
-- **Cross-file context** — scans open tabs and workspace files for related functions, classes, and imports
-- **Git diff awareness** — recent uncommitted changes are included as prompt context
-- **TF-IDF similar code matching** — finds code blocks with similar keywords in the same file
-- **Diagnostics context** — errors and warnings near the cursor are included in the prompt
-- **Adaptive streaming timeout** — first requests and cold starts get longer timeouts (up to 4s)
+- **Optional context enrichment** (`deepseekFim.contextEnrichment`, off by default) — when enabled, adds cross-file context from open tabs and workspace files, git diff awareness, TF-IDF similar-code matching, enclosing symbols, and diagnostics near the cursor. Off by default to keep completions fast and predictable.
+- **Adaptive streaming timeout** (only when `deepseekFim.streaming` is on) — first requests and cold starts get longer timeouts (up to 4s)
 - **Sensitive file filter** — skips `.env`, secrets, credentials, `config.json` in safe paths; custom glob patterns
-- **Usage statistics** — tracks shown/accepted completions, tokens used, estimated cost; suggests v4-pro if acceptance rate is low
+- **Guided setup & clear diagnostics** — an onboarding walkthrough, one-click **Test Connection**, a status-bar quick menu, and failed requests explained inline (invalid key / no credits / rate limit / timeout) with an **Open Log** action
+- **Usage statistics** — tracks shown/accepted completions, tokens used, and estimated cost
 - **Secure API key storage** — stored in OS keychain via `SecretStorage`, auto-invalidated on external changes
 - **Dynamic debug logging** — toggle `deepseekFim.debug` at runtime, no reload needed
 - **Config re-validation** — settings changes are validated live via `onDidChangeConfiguration`
@@ -37,6 +35,8 @@ Context-aware inline suggestions for 16+ languages — works like Copilot, power
 - [DeepSeek API key](https://platform.deepseek.com/api_keys) (free credits available)
 
 ## Quick Start
+
+On first install VS Code shows a **Get started with DeepSeek Autocomplete** walkthrough (also reachable from `Help → Welcome`).
 
 ### 1. Set your API key
 ```
@@ -54,7 +54,6 @@ Open any supported file. Ghost text appears inline as you type.
 | `Tab` | Accept completion |
 | `Escape` | Dismiss |
 | `Ctrl+Shift+.` | Toggle on/off |
-| `Ctrl+Right` | Accept next word (when ghost text visible) |
 | `Alt+]` / `Alt+[` | Cycle to next / previous suggestion |
 | `Ctrl+Space` | Show 3 alternative completions |
 
@@ -71,8 +70,11 @@ Open any supported file. Ghost text appears inline as you type.
 | `DeepSeek Autocomplete: Accept Next Word` | Accept one word of inline completion |
 | `DeepSeek Autocomplete: Next Suggestion` | Cycle to next alternative |
 | `DeepSeek Autocomplete: Previous Suggestion` | Cycle to previous alternative |
+| `DeepSeek Autocomplete: Test Connection` | Verify the API key is accepted and the API is reachable |
 | `DeepSeek Autocomplete: Usage Statistics` | View shown/accepted/tokens cost |
 | `DeepSeek Autocomplete: Debug Log` | Open debug output channel |
+
+Click the status bar item for a quick menu: enable/disable, set key, test connection, select model, statistics, and logs. A failed request raises a one-line explanation (invalid key, no credits, rate limit, or timeout) with an **Open Log** button instead of failing silently.
 
 ## Configuration
 
@@ -94,7 +96,9 @@ All settings are under `deepseekFim.*` (`Ctrl+,` → search "deepseek").
 | `deepseekFim.debounceMs` | 300 | Delay before requesting while typing |
 | `deepseekFim.maxTokens` | 256 | Max tokens (auto-bumps to 1024 for multi-line) |
 | `deepseekFim.temperature` | 0.0 | 0 = deterministic, higher = more creative |
-| `deepseekFim.streamingTimeout` | 2000 | Single-line early-break timeout in ms (adaptive: first 3 requests get 4s) |
+| `deepseekFim.streaming` | `false` | `false` = single non-streaming request (simpler/more reliable). `true` = consume the SSE stream with early-break |
+| `deepseekFim.contextEnrichment` | `false` | Add heavy extra context (symbols, diagnostics, git diff, similar code, cross-file scans) to prompts |
+| `deepseekFim.streamingTimeout` | 2000 | Single-line early-break timeout in ms, only used when `streaming` is `true` (adaptive: first 3 requests get 4s) |
 | `deepseekFim.cacheSize` | 500 | LRU cache entries (0 = disabled) |
 
 ### Context
@@ -112,9 +116,8 @@ All settings are under `deepseekFim.*` (`Ctrl+,` → search "deepseek").
 |---------|---------|-------------|
 | `deepseekFim.stopSequences` | `[]` | Custom stop sequences (appended to defaults) |
 | `deepseekFim.disableInFiles` | `[]` | Glob patterns to skip (e.g. `**/*.min.js`) |
-| `deepseekFim.debug` | `false` | Verbose logging to output channel |
+| `deepseekFim.debug` | `true` | Verbose logging to output channel (on by default so failures are visible) |
 | `deepseekFim.snippetSupport` | `false` | Enable `SnippetString` tab stops (`$1`) |
-| `deepseekFim.acceptOnEnter` | `false` | Accept inline completion on Enter (in addition to Tab) |
 
 ### JSON example
 
@@ -150,7 +153,7 @@ User types → VS Code calls provideInlineCompletionItems
   │   ├─ Git diff context (async exec)
   │   ├─ TF-IDF similar code blocks (cached by doc version)
   │   └─ Cross-file context (open tabs + workspace, 20KB capped)
-  ├─ Streaming request to DeepSeek API (gzip, adaptive timeout)
+  ├─ Request to DeepSeek API (single by default; optional streaming)
   ├─ Overlap trimming against suffix text
   └─ Return InlineCompletionItem → ghost text
 ```
@@ -189,13 +192,14 @@ code --install-extension deepseek-fim-auto-complete-*.vsix
 2. **Adaptive ghost text** check: if the characters you just typed match the start of the previously shown ghost text, the remaining text is returned instantly (no API call)
 3. The extension extracts **prefix** (code before cursor) and **suffix** (code after cursor) with configurable line/char limits
 4. **Cache lookup**: exact match, prefix match, substring match, or subsequence match against existing entries
-5. **Enrichment** (cached across keystrokes, debounced at 800ms):
+5. **Enrichment** — only when `deepseekFim.contextEnrichment` is `true` (cached across keystrokes, debounced at 800ms):
    - Enclosing function/class signature (via DocumentSymbols or regex fallback)
    - Diagnostics near cursor (errors/warnings within ±3 lines)
    - Git diff context (recent unstaged changes, async, cached 30s)
    - TF-IDF similar code blocks from current file (cached by doc version)
    - Related files from open tabs and workspace (limited to 20KB per file)
-   - Comment hint above cursor
+   
+   By default the prompt is just a file header, a comment hint above the cursor, and the raw prefix/suffix — fast and predictable.
 6. The enriched prompt is sent to DeepSeek's FIM API (`/v1/completions`) via HTTPS with **gzip** `Accept-Encoding`
 7. For **single-line** contexts: response is cut early at `;` or 120 chars; no truncation for multi-line content
 8. For **multi-line** contexts (after `def`, `class`, `if`, `{`, or inside any block with unclosed `{`): response waits for full block completion using `\n\n\n\n` stop token; per-declaration stop tokens (`\nlet`, `\nconst`) are removed

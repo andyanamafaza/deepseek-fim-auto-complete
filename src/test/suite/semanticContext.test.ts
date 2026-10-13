@@ -29,10 +29,11 @@ suite('SemanticContext', () => {
     const blocks = [
       { startLine: 0, endLine: 5, text: 'function foo() {}', keywords: new Set(['foo', 'bar']) },
       { startLine: 6, endLine: 10, text: 'function baz() {}', keywords: new Set(['baz', 'bar']) },
+      { startLine: 11, endLine: 15, text: 'function baz2() {}', keywords: new Set(['baz', 'qux']) },
     ];
     const queryKeywords = new Set(['foo', 'baz']);
     const idf = computeIDF(blocks, queryKeywords);
-    assert.ok(idf.get('foo')! > idf.get('baz')!, 'foo appears less -> higher IDF');
+    assert.ok(idf.get('foo')! > idf.get('baz')!, 'foo appears in fewer blocks -> higher IDF');
   });
 
   test('cosineSimilarity: identical keyword sets should score 1', () => {

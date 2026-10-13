@@ -4,8 +4,7 @@ const INTERVAL_WINDOW = 5;
 
 export class Debouncer {
   private timeoutId: NodeJS.Timeout | undefined;
-  private currentRequestId = 0;
-  private instanceCounter = 0;
+  private pendingResolve: ((stale: boolean) => void) | undefined;
   private intervals: number[] = [];
   private lastCall = 0;
 
@@ -31,44 +30,44 @@ export class Debouncer {
     return Math.max(MIN_DEBOUNCE, Math.min(MAX_DEBOUNCE, delay));
   }
 
-  async wait(delayMs: number): Promise<boolean> {
-    const requestId = ++this.instanceCounter;
-    this.currentRequestId = requestId;
-
+  /** Resolve any in-flight wait so a superseded caller can never hang. */
+  private settlePending(stale: boolean): void {
+    const resolve = this.pendingResolve;
+    this.pendingResolve = undefined;
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
+      this.timeoutId = undefined;
     }
+    resolve?.(stale);
+  }
+
+  /**
+   * Wait out the debounce window. Resolves `true` when this call was superseded
+   * by a newer one (or cleared) — meaning it should stop; `false` when it is the
+   * latest call and should proceed. A superseded call always resolves.
+   */
+  async wait(delayMs: number): Promise<boolean> {
+    this.settlePending(true);
 
     const adaptiveDelay = this.measureInterval();
     const effectiveDelay = Math.max(delayMs, adaptiveDelay);
 
     return new Promise<boolean>((resolve) => {
+      this.pendingResolve = resolve;
       this.timeoutId = setTimeout(() => {
-        const isStale = this.currentRequestId !== requestId;
-        resolve(isStale);
+        this.pendingResolve = undefined;
+        this.timeoutId = undefined;
+        resolve(false);
       }, effectiveDelay);
     });
   }
 
-  isStale(): boolean {
-    return this.currentRequestId !== this.instanceCounter;
-  }
-
   clear(): void {
-    this.currentRequestId = -1;
-    this.instanceCounter++;
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = undefined;
-    }
+    this.settlePending(true);
   }
 
   cancel(): void {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = undefined;
-    }
-    this.currentRequestId = -1;
+    this.settlePending(true);
     this.intervals = [];
   }
 }

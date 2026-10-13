@@ -28,6 +28,7 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.ok(commands.includes('deepseekFim.acceptNextWord'), 'acceptNextWord command');
     assert.ok(commands.includes('deepseekFim.nextSuggestion'), 'nextSuggestion command');
     assert.ok(commands.includes('deepseekFim.previousSuggestion'), 'previousSuggestion command');
+    assert.ok(commands.includes('deepseekFim._accepted'), 'internal accept command');
   });
 
   test('Toggle command should work', async () => {
@@ -49,11 +50,12 @@ suite('DeepSeek Autocomplete Extension', () => {
     assert.strictEqual(config.get<number>('cacheSize'), 500);
     assert.strictEqual(config.get<string>('multilineCompletions'), 'auto');
     assert.strictEqual(config.get<string>('triggerMode'), 'automatic');
-    assert.strictEqual(config.get<number>('streamingTimeout'), 500);
-    assert.strictEqual(config.get<boolean>('debug'), false);
+    assert.strictEqual(config.get<number>('streamingTimeout'), 2000);
+    assert.strictEqual(config.get<boolean>('streaming'), false);
+    assert.strictEqual(config.get<boolean>('contextEnrichment'), false);
+    assert.strictEqual(config.get<boolean>('debug'), true);
     assert.strictEqual(config.get<string>('baseUrl'), 'https://api.deepseek.com/beta');
     assert.strictEqual(config.get<number>('timeoutMs'), 10000);
-    assert.strictEqual(config.get<boolean>('acceptOnEnter'), false);
     assert.strictEqual(config.get<boolean>('alwaysShowCompletions'), false);
     assert.deepStrictEqual(config.get<string[]>('disableInFiles'), []);
     assert.deepStrictEqual(config.get<string[]>('stopSequences'), []);

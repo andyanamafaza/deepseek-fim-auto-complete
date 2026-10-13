@@ -1,21 +1,4 @@
-import * as vscode from 'vscode';
-
 export class MultilineClassifier {
-  classify(document: vscode.TextDocument, position: vscode.Position): boolean {
-    const line = document.lineAt(position.line).text;
-    const textBeforeCursor = line.slice(0, position.character).trimEnd();
-
-    if (textBeforeCursor.length > 0 && this.isMultilineTrigger(textBeforeCursor, line)) return true;
-
-    if (position.line > 0 && textBeforeCursor.length === 0) {
-      const prevLine = document.lineAt(position.line - 1).text;
-      const prevTrimmed = prevLine.trimEnd();
-      if (prevTrimmed.length > 0 && this.isMultilineTrigger(prevTrimmed, prevLine)) return true;
-    }
-
-    return false;
-  }
-
   shouldSuggestMultiline(prefix: string): boolean {
     if (!prefix) return false;
 

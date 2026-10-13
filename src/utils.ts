@@ -1,47 +1,31 @@
-export const STOP_TOKENS = [
-  '\n\n\n',
-  '\r\n\r\n\r\n',
-];
-
 interface LanguageInfo {
   comment: string;
-  stopTokens: string[];
-  defaultMaxTokens: number;
 }
 
+/**
+ * Only the line-comment token per language is still needed (used to label
+ * context and comment-hint lines in the prompt).
+ */
 export const LANGUAGE_MAP: Record<string, LanguageInfo> = {
-  javascript:     { comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass ', '\ninterface '] },
-  typescript:     { comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass ', '\ninterface ', '\ntype ', '\nenum '] },
-  typescriptreact:{ comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass ', '\ninterface '] },
-  javascriptreact:{ comment: '//', defaultMaxTokens: 768,  stopTokens: ['\nfunction ', '\nimport ', '\nexport ', '\nclass '] },
-  python:         { comment: '#', defaultMaxTokens: 1024, stopTokens: ['\nclass ', '\ndef ', '\nimport ', '\nfrom ', '\n"""'] },
-  go:             { comment: '//', defaultMaxTokens: 384,  stopTokens: ['\nfunc ', '\npackage ', '\nimport ', '\ntype '] },
-  rust:           { comment: '//', defaultMaxTokens: 384,  stopTokens: ['\nfn ', '\nstruct ', '\nenum ', '\nimpl ', '\nuse ', '\nmod ', '\npub '] },
-  java:           { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\npublic ', '\nprivate ', '\nprotected ', '\nclass ', '\ninterface ', '\nimport '] },
-  c:              { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\n#include ', '\n#define ', '\nstruct '] },
-  cpp:            { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\n#include ', '\n#define ', '\nclass ', '\ntemplate '] },
-  csharp:         { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\npublic ', '\nprivate ', '\nprotected ', '\nclass ', '\ninterface ', '\nnamespace ', '\nusing '] },
-  ruby:           { comment: '#', defaultMaxTokens: 768,  stopTokens: ['\ndef ', '\nclass ', '\nmodule ', '\nrequire ', '\nend'] },
-  php:            { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\nfunction ', '\nclass ', '\nnamespace ', '\nuse '] },
-  swift:          { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\nfunc ', '\nclass ', '\nstruct ', '\nenum ', '\nimport '] },
-  kotlin:         { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\nfun ', '\nclass ', '\nobject ', '\nimport '] },
-  scala:          { comment: '//', defaultMaxTokens: 512,  stopTokens: ['\ndef ', '\nclass ', '\nobject ', '\ntrait ', '\nimport '] },
-  lua:            { comment: '--', defaultMaxTokens: 512,  stopTokens: ['\nfunction ', '\nlocal '] },
-  sql:            { comment: '--', defaultMaxTokens: 256,  stopTokens: ['\nSELECT ', '\nFROM ', '\nWHERE ', '\nINSERT ', '\nUPDATE ', '\nDELETE ', '\nCREATE ', '\nALTER '] },
+  javascript:      { comment: '//' },
+  typescript:      { comment: '//' },
+  typescriptreact: { comment: '//' },
+  javascriptreact: { comment: '//' },
+  python:          { comment: '#' },
+  go:              { comment: '//' },
+  rust:            { comment: '//' },
+  java:            { comment: '//' },
+  c:               { comment: '//' },
+  cpp:             { comment: '//' },
+  csharp:          { comment: '//' },
+  ruby:            { comment: '#' },
+  php:             { comment: '//' },
+  swift:           { comment: '//' },
+  kotlin:          { comment: '//' },
+  scala:           { comment: '//' },
+  lua:             { comment: '--' },
+  sql:             { comment: '--' },
 };
-
-export function getLanguageDefaultMaxTokens(languageId: string): number {
-  return LANGUAGE_MAP[languageId]?.defaultMaxTokens || 256;
-}
-
-export function getStopTokensForLanguage(languageId: string): string[] {
-  const tokens: string[] = [...STOP_TOKENS];
-  const langInfo = LANGUAGE_MAP[languageId];
-  if (langInfo) {
-    tokens.push(...langInfo.stopTokens);
-  }
-  return tokens;
-}
 
 export function isWhitespaceOrEmpty(text: string): boolean {
   return text.trim().length === 0;

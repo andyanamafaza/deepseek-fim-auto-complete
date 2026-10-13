@@ -16,7 +16,7 @@
     "url": "https://github.com/andyanamafaza/deepseek-fim-auto-complete.git"
   },
   "engines": {
-    "vscode": "^1.68.0"
+    "vscode": "^1.86.0"
   },
   "categories": [
     "Programming Languages",
@@ -41,8 +41,11 @@
     "vscode extension"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onLanguage:javascript",
+    "onLanguage:javascriptreact",
     "onLanguage:typescript",
+    "onLanguage:typescriptreact",
     "onLanguage:python",
     "onLanguage:java",
     "onLanguage:go",
@@ -56,7 +59,22 @@
     "onLanguage:kotlin",
     "onLanguage:scala",
     "onLanguage:lua",
-    "onLanguage:sql"
+    "onLanguage:sql",
+    "onLanguage:html",
+    "onLanguage:css",
+    "onLanguage:scss",
+    "onLanguage:vue",
+    "onLanguage:svelte",
+    "onLanguage:dart",
+    "onLanguage:elixir",
+    "onLanguage:r",
+    "onLanguage:perl",
+    "onLanguage:powershell",
+    "onLanguage:objective-c",
+    "onLanguage:objective-cpp",
+    "onLanguage:markdown",
+    "onLanguage:json",
+    "onLanguage:yaml"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -116,18 +134,29 @@
       {
         "command": "deepseekFim.previousSuggestion",
         "title": "DeepSeek Autocomplete: Previous Suggestion"
+      },
+      {
+        "command": "deepseekFim.testConnection",
+        "title": "DeepSeek Autocomplete: Test Connection"
+      },
+      {
+        "command": "deepseekFim.statusBarMenu",
+        "title": "DeepSeek Autocomplete: Status Bar Menu"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "deepseekFim.statusBarMenu",
+          "when": "false"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "deepseekFim.toggle",
         "key": "ctrl+shift+.",
         "when": "editorTextFocus"
-      },
-      {
-        "command": "deepseekFim.acceptNextWord",
-        "key": "ctrl+right",
-        "when": "editorTextFocus && inlineSuggestionVisible"
       },
       {
         "command": "deepseekFim.nextSuggestion",
@@ -144,11 +173,14 @@
       "title": "DeepSeek Autocomplete",
       "properties": {
         "deepseekFim.enabled": {
+          "order": 1,
+          "markdownDescription": "Master switch for inline completions.",
           "type": "boolean",
-          "default": true,
-          "description": "Enable/disable inline completions globally."
+          "default": true
         },
         "deepseekFim.model": {
+          "order": 2,
+          "markdownDescription": "Model used for Fill-in-the-Middle completions. `deepseek-v4-flash` is fast and cheap; `deepseek-v4-pro` is higher quality.",
           "type": "string",
           "default": "deepseek-v4-flash",
           "enum": [
@@ -156,15 +188,11 @@
             "deepseek-v4-pro",
             "deepseek-chat",
             "deepseek-reasoner"
-          ],
-          "description": "DeepSeek model. Use v4-flash for speed, v4-pro for quality."
-        },
-        "deepseekFim.baseUrl": {
-          "type": "string",
-          "default": "https://api.deepseek.com/beta",
-          "description": "DeepSeek API base URL. Change for custom/enterprise deployments."
+          ]
         },
         "deepseekFim.triggerMode": {
+          "order": 3,
+          "markdownDescription": "`automatic` requests completions while you type; `manual` only requests them on `Ctrl+Space`.",
           "type": "string",
           "default": "automatic",
           "enum": [
@@ -174,73 +202,11 @@
           "enumDescriptions": [
             "Request completions automatically while typing (with debounce).",
             "Only request when explicitly triggered (Ctrl+Space)."
-          ],
-          "description": "Controls when completion requests are made."
-        },
-        "deepseekFim.debounceMs": {
-          "type": "number",
-          "default": 300,
-          "minimum": 100,
-          "maximum": 5000,
-          "description": "Debounce delay in ms before triggering a completion request while typing."
-        },
-        "deepseekFim.maxTokens": {
-          "type": "number",
-          "default": 256,
-          "minimum": 16,
-          "maximum": 4096,
-          "description": "Max tokens per completion. Auto-bumps to 1024 for multi-line."
-        },
-        "deepseekFim.temperature": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "maximum": 2,
-          "description": "Sampling temperature. 0 = deterministic, higher = more creative."
-        },
-        "deepseekFim.timeoutMs": {
-          "type": "number",
-          "default": 10000,
-          "minimum": 1000,
-          "maximum": 120000,
-          "description": "HTTP request timeout in milliseconds."
-        },
-        "deepseekFim.maxPrefixChars": {
-          "type": "number",
-          "default": 6000,
-          "minimum": 100,
-          "maximum": 50000,
-          "description": "Maximum characters before cursor to include as prefix context."
-        },
-        "deepseekFim.maxSuffixChars": {
-          "type": "number",
-          "default": 2000,
-          "minimum": 100,
-          "maximum": 50000,
-          "description": "Maximum characters after cursor to include as suffix context."
-        },
-        "deepseekFim.maxPrefixLines": {
-          "type": "number",
-          "default": 100,
-          "minimum": 10,
-          "maximum": 500,
-          "description": "Maximum lines before cursor to include (applied after char limit)."
-        },
-        "deepseekFim.maxSuffixLines": {
-          "type": "number",
-          "default": 50,
-          "minimum": 10,
-          "maximum": 500,
-          "description": "Maximum lines after cursor to include (applied after char limit)."
-        },
-        "deepseekFim.cacheSize": {
-          "type": "number",
-          "default": 500,
-          "minimum": 0,
-          "maximum": 10000,
-          "description": "LRU cache entries. 0 = disabled. Cache avoids repeat API calls for common prefixes."
+          ]
         },
         "deepseekFim.multilineCompletions": {
+          "order": 4,
+          "markdownDescription": "`auto` detects blocks (after `:`, `{`, `def`, `class`, ...); `always` / `never` force it on / off.",
           "type": "string",
           "default": "auto",
           "enum": [
@@ -252,17 +218,118 @@
             "Always allow multiline completions — full functions and blocks.",
             "Only single-line completions — stops at first statement end.",
             "Auto-detect based on cursor context (after :, {, def, class, if, etc.)."
-          ],
-          "description": "When to suggest multi-line completions."
+          ]
         },
-        "deepseekFim.streamingTimeout": {
+        "deepseekFim.debounceMs": {
+          "order": 5,
+          "description": "Debounce delay in ms before triggering a completion request while typing.",
+          "type": "number",
+          "default": 300,
+          "minimum": 100,
+          "maximum": 5000
+        },
+        "deepseekFim.maxTokens": {
+          "order": 6,
+          "description": "Max tokens per completion. Auto-bumps to 1024 for multi-line.",
+          "type": "number",
+          "default": 256,
+          "minimum": 16,
+          "maximum": 4096
+        },
+        "deepseekFim.temperature": {
+          "order": 7,
+          "description": "Sampling temperature. 0 = deterministic, higher = more creative.",
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 2
+        },
+        "deepseekFim.timeoutMs": {
+          "order": 8,
+          "markdownDescription": "HTTP timeout in milliseconds. Raise it if you see `ETIMEDOUT` on long multi-line completions.",
+          "type": "number",
+          "default": 10000,
+          "minimum": 1000,
+          "maximum": 120000
+        },
+        "deepseekFim.contextEnrichment": {
+          "order": 9,
+          "markdownDescription": "Adds enclosing symbol, diagnostics, git diff, similar-code matching, and cross-file scans to the prompt. Off (default) keeps completions fast and predictable.",
+          "type": "boolean",
+          "default": false
+        },
+        "deepseekFim.streaming": {
+          "order": 10,
+          "markdownDescription": "Off (default) sends one non-streaming request. On consumes the SSE stream with early-break. VS Code renders inline completions only once complete, so single-request is usually simpler and more reliable.",
+          "type": "boolean",
+          "default": false
+        },
+        "deepseekFim.maxPrefixChars": {
+          "order": 11,
+          "description": "Maximum characters before cursor to include as prefix context.",
+          "type": "number",
+          "default": 6000,
+          "minimum": 100,
+          "maximum": 50000
+        },
+        "deepseekFim.maxSuffixChars": {
+          "order": 12,
+          "description": "Maximum characters after cursor to include as suffix context.",
           "type": "number",
           "default": 2000,
           "minimum": 100,
-          "maximum": 10000,
-          "description": "Single-line early-break timeout in ms. Multi-line uses HTTP timeout."
+          "maximum": 50000
+        },
+        "deepseekFim.maxPrefixLines": {
+          "order": 13,
+          "description": "Maximum lines before cursor to include (applied after char limit).",
+          "type": "number",
+          "default": 100,
+          "minimum": 10,
+          "maximum": 500
+        },
+        "deepseekFim.maxSuffixLines": {
+          "order": 14,
+          "description": "Maximum lines after cursor to include (applied after char limit).",
+          "type": "number",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 500
+        },
+        "deepseekFim.cacheSize": {
+          "order": 15,
+          "description": "LRU cache entries. 0 = disabled. Cache avoids repeat API calls for common prefixes.",
+          "type": "number",
+          "default": 500,
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "deepseekFim.streamingTimeout": {
+          "order": 16,
+          "description": "Single-line early-break timeout in ms. Multi-line uses HTTP timeout.",
+          "type": "number",
+          "default": 2000,
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "deepseekFim.baseUrl": {
+          "order": 17,
+          "description": "DeepSeek API base URL. Change for custom/enterprise deployments.",
+          "type": "string",
+          "default": "https://api.deepseek.com/beta"
+        },
+        "deepseekFim.stopSequences": {
+          "order": 18,
+          "description": "Additional stop sequences for the model (appended to language defaults).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         },
         "deepseekFim.disableInFiles": {
+          "order": 19,
+          "description": "Glob patterns for files where completions are disabled.",
           "type": "array",
           "items": {
             "type": "string"
@@ -272,42 +339,79 @@
             "**/*.min.js",
             "**/*.json",
             "**/secret*"
-          ],
-          "description": "Glob patterns for files where completions are disabled."
-        },
-        "deepseekFim.stopSequences": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Additional stop sequences for the model (appended to language defaults)."
-        },
-        "deepseekFim.debug": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable verbose debug logging to the output channel."
+          ]
         },
         "deepseekFim.snippetSupport": {
+          "order": 20,
+          "description": "Enable SnippetString tab stops ($1, ${1:name}) in completions.",
           "type": "boolean",
-          "default": false,
-          "description": "Enable SnippetString tab stops ($1, ${1:name}) in completions."
-        },
-        "deepseekFim.acceptOnEnter": {
-          "type": "boolean",
-          "default": false,
-          "description": "Accept inline completion on Enter (in addition to Tab)."
+          "default": false
         },
         "deepseekFim.alwaysShowCompletions": {
+          "order": 21,
+          "description": "Show completions immediately on every keystroke (bypasses debounce). May increase API usage.",
           "type": "boolean",
-          "default": false,
-          "description": "Show completions immediately on every keystroke (bypasses debounce). May increase API usage."
+          "default": false
+        },
+        "deepseekFim.debug": {
+          "order": 22,
+          "markdownDescription": "Verbose logging to **Output: DeepSeek Autocomplete**. On by default so failures are visible.",
+          "type": "boolean",
+          "default": true
         }
       }
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "deepseekFim.getStarted",
+        "title": "Get started with DeepSeek Autocomplete",
+        "description": "AI-powered inline code completions in a couple of minutes.",
+        "steps": [
+          {
+            "id": "getApiKey",
+            "title": "Get a DeepSeek API key",
+            "description": "Create an API key on the DeepSeek platform. Free credits are available.\n[Get a key](https://platform.deepseek.com/api_keys)",
+            "media": {
+              "markdown": "walkthroughs/get-api-key.md"
+            }
+          },
+          {
+            "id": "setApiKey",
+            "title": "Add your API key",
+            "description": "Stored in your OS keychain - never in settings or logs.\n[Set API key](command:deepseekFim.setApiKey)",
+            "media": {
+              "markdown": "walkthroughs/set-api-key.md"
+            },
+            "completionEvents": [
+              "onCommand:deepseekFim.setApiKey"
+            ]
+          },
+          {
+            "id": "testConnection",
+            "title": "Test the connection",
+            "description": "Confirm the key works before you start coding. The result - and the exact reason if it fails - is shown in a notification.\n[Test connection](command:deepseekFim.testConnection)\n[Open log](command:deepseekFim.showLog)",
+            "media": {
+              "markdown": "walkthroughs/test-connection.md"
+            },
+            "completionEvents": [
+              "onCommand:deepseekFim.testConnection"
+            ]
+          },
+          {
+            "id": "startCoding",
+            "title": "Start coding",
+            "description": "Open any file, pause, and accept the ghost text with Tab.\n[Open settings](command:workbench.action.openSettings?%22deepseekFim%22)",
+            "media": {
+              "markdown": "walkthroughs/start-coding.md"
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
-    "vscode:prepublish": "node esbuild.js",
+    "vscode:prepublish": "npm run clean && node esbuild.js",
+    "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "tsc --noEmit",
@@ -316,7 +420,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.43",
-    "@types/vscode": "^1.68.0",
+    "@types/vscode": "^1.86.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vscode/test-electron": "^2.5.2",
